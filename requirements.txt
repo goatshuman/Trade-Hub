@@ -1,0 +1,7 @@
+discord.py>=2.6.0
+python-dotenv>=1.0.0
+aiofiles>=25.0.0
+aiohttp
+flask
+openai>=1.0.0
+openai
