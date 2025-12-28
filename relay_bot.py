@@ -3,6 +3,7 @@ from discord.ext import commands, tasks
 import json
 import os
 import asyncio
+import io
 import random
 from datetime import datetime
 
@@ -14,6 +15,7 @@ VERIFIED_ROLE_ID = 1439203352406921377
 STAFF_CHAT_CHANNEL_ID = 1439944303261647010
 MAIN_GUIDE_CHANNEL_ID = 1439218639847952448
 MIDDLEMAN_ROLE_ID = 1438896022590984295
+TRANSCRIPT_CHANNEL_ID = 1439211113420951643  # Your specific transcript channel
 TICKET_DATA_FILE = "ticket_data.json"
 
 # Staff Roles
@@ -46,27 +48,81 @@ def save_ticket_data(data):
             json.dump(data, f, indent=4)
     except: pass
 
-async def close_ticket_logic(staff_channel, user_channel_id):
-    """Deletes both channels and cleans JSON"""
-    # Delete User Channel
-    if user_channel_id:
-        user_chan = bot.get_channel(user_channel_id)
-        if user_chan: 
-            try: await user_chan.delete()
-            except: pass
+async def create_transcript(channel, opener_id, claimer_id, closer_id):
+    """Generates a transcript and sends it to the log channel"""
+    if not channel: return
     
-    # Clean JSON
+    transcript_content = f"# Ticket Transcript: {channel.name}\n\n"
+    transcript_content += f"**Opener ID:** {opener_id}\n"
+    transcript_content += f"**Claimer ID:** {claimer_id}\n"
+    transcript_content += f"**Closer ID:** {closer_id}\n"
+    transcript_content += f"**Closed at:** {datetime.utcnow().isoformat()}\n\n"
+    transcript_content += "---\n\n## Messages:\n\n"
+
+    try:
+        # Collect messages
+        messages = []
+        async for message in channel.history(limit=None, oldest_first=True):
+            messages.append(message)
+
+        for message in messages:
+            timestamp = message.created_at.strftime("%Y-%m-%d %H:%M:%S UTC")
+            author = message.author.name
+            
+            # If it's the bot speaking as AI, clarify it
+            if message.author.id == bot.user.id and message.embeds:
+                if message.embeds[0].author and "Trade Hub AI" in str(message.embeds[0].author.name):
+                    author = "Staff (via AI)"
+            
+            transcript_content += f"[{timestamp}] {author}: {message.content}\n"
+            if message.attachments:
+                for a in message.attachments:
+                    transcript_content += f"[{timestamp}] [ATTACHMENT]: {a.url}\n"
+        
+        # Send to Transcript Channel
+        log_chan = channel.guild.get_channel(TRANSCRIPT_CHANNEL_ID)
+        if log_chan:
+            file = discord.File(io.BytesIO(transcript_content.encode('utf-8')), filename=f"transcript-{channel.name}.txt")
+            embed = discord.Embed(title=f"📄 Transcript: {channel.name}", color=discord.Color.orange(), timestamp=datetime.utcnow())
+            await log_chan.send(embed=embed, file=file)
+    except Exception as e:
+        print(f"Transcript Error: {e}")
+
+async def close_ticket_logic(staff_channel, user_channel_id, closer_id=None):
+    """Deletes both channels, saves transcript, and cleans JSON"""
+    
+    # 1. Get User Channel object before deletion
+    user_chan = bot.get_channel(user_channel_id) if user_channel_id else None
+    
+    # 2. Get Data for Transcript
     data = load_ticket_data()
-    found = None
+    found_uid = None
+    opener_id = "Unknown"
+    claimer_id = "None"
+    
     for uid, t in data.get("user_middleman_tickets", {}).items():
         if t["channel_id"] == user_channel_id:
-            found = uid
+            found_uid = uid
+            opener_id = t.get("opener", uid)
+            claimer_id = t.get("claimer", "None")
             break
-    if found:
-        del data["user_middleman_tickets"][found]
+            
+    # 3. Create Transcript (prioritize User Channel history)
+    if user_chan:
+        await create_transcript(user_chan, opener_id, claimer_id, closer_id)
+    elif staff_channel: 
+        await create_transcript(staff_channel, opener_id, claimer_id, closer_id)
+
+    # 4. Clean JSON
+    if found_uid:
+        del data["user_middleman_tickets"][found_uid]
         save_ticket_data(data)
 
-    # Delete Staff Channel
+    # 5. Delete Channels
+    if user_chan:
+        try: await user_chan.delete()
+        except: pass
+    
     if staff_channel:
         try: await staff_channel.delete()
         except: pass
@@ -109,21 +165,18 @@ class HitView(discord.ui.View):
         verified_role = interaction.guild.get_role(VERIFIED_ROLE_ID)
         if verified_role: await self.target_user.add_roles(verified_role)
         
-        # Grant Access
         for cid in [STAFF_CHAT_CHANNEL_ID, MAIN_GUIDE_CHANNEL_ID]:
             c = interaction.guild.get_channel(cid)
             if c: await c.set_permissions(self.target_user, view_channel=True)
 
         await interaction.response.send_message(embed=discord.Embed(title="✅ Verified", description="Welcome to the team.", color=discord.Color.green()))
         
-        # Hitter DM
         try:
             hitter_embed = discord.Embed(title="🎯 You're a hitter now", description="Welcome.", color=discord.Color.purple())
             hitter_embed.add_field(name="Instructions", value="Check staff channels for info.")
             await self.target_user.send(embed=hitter_embed)
         except: pass
         
-        # Cleanup
         try:
             if self.message_id: (await interaction.channel.fetch_message(self.message_id)).delete()
             if self.timer_message_id: (await interaction.channel.fetch_message(self.timer_message_id)).delete()
@@ -141,10 +194,13 @@ class StaffClaimView(discord.ui.View):
 
     @discord.ui.button(label="Claim Ticket", style=discord.ButtonStyle.green, custom_id="ai_staff_claim")
     async def claim(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.channel.set_permissions(interaction.user, send_messages=True)
-        await interaction.response.send_message(f"✅ Claimed by {interaction.user.mention}.")
+        # --- PERMISSION UPDATE: GRANT WRITE ACCESS TO CLAIMER ONLY ---
+        await interaction.channel.set_permissions(interaction.user, send_messages=True, view_channel=True)
+        
+        await interaction.response.send_message(f"✅ Claimed by {interaction.user.mention}. You can now type here.")
         button.disabled = True
         button.label = f"Claimed by {interaction.user.name}"
+        button.style = discord.ButtonStyle.gray
         await interaction.message.edit(view=self)
 
 class ChoiceView(discord.ui.View):
@@ -164,7 +220,6 @@ class ChoiceView(discord.ui.View):
 
     @discord.ui.button(label="Middleman", style=discord.ButtonStyle.gray, custom_id="btn_mm")
     async def mm(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Unlock JSON
         data = load_ticket_data()
         found = False
         for uid, t in data.get("user_middleman_tickets", {}).items():
@@ -193,11 +248,12 @@ class AIModal(discord.ui.Modal, title="Trade Details"):
         await interaction.response.defer(ephemeral=True)
         guild = interaction.guild
         
-        # Create Staff Relay Channel
         cat = guild.get_channel(AI_CATEGORY_ID)
-        await cat.edit(overwrites={guild.default_role: discord.PermissionOverwrite(view_channel=True)})
+        if cat:
+            await cat.edit(overwrites={guild.default_role: discord.PermissionOverwrite(view_channel=True)})
         
         c_name = f"ai-{interaction.user.name}-{random.randint(1000,9999)}"
+        # STAFF CAN VIEW BUT NOT TYPE INITIALLY
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
             guild.get_role(OWNER_ROLE_ID): discord.PermissionOverwrite(view_channel=True, send_messages=True)
@@ -210,11 +266,9 @@ class AIModal(discord.ui.Modal, title="Trade Details"):
         relay_map[staff_chan.id] = interaction.channel.id
         reverse_relay_map[interaction.channel.id] = staff_chan.id
         
-        # Send Controls
         view = StaffClaimView()
         await staff_chan.send(f"**New AI Ticket**\n**User:** {interaction.user.mention}\n**Trade:** {self.trade_info.value}\n**Partner:** {self.other_user.value}\n**Link:** {interaction.channel.mention}", view=view)
 
-        # Notify User
         embed = discord.Embed(title="Trade Assistant", description="An AI agent has joined the chat.", color=discord.Color.blue())
         await interaction.channel.send(embed=embed)
         await interaction.followup.send("AI Connected!", ephemeral=True)
@@ -252,21 +306,24 @@ async def on_message(message):
         user_chan = bot.get_channel(user_chan_id)
         if not user_chan: return
 
-        # COMMANDS
         content = message.content
+        
+        # !close
         if content.startswith("!close"):
-            await message.channel.send("Closing both channels...")
-            await asyncio.sleep(2)
-            await close_ticket_logic(message.channel, user_chan_id)
+            await message.channel.send("Generating transcript & closing...")
+            # We pass message.author.id as the closer
+            await close_ticket_logic(message.channel, user_chan_id, closer_id=message.author.id)
             return
 
+        # !transfer
         elif content.startswith("!transfer"):
             try:
-                # !transfer username
                 target_name = content.split(" ", 1)[1]
                 target = discord.utils.get(message.guild.members, name=target_name)
                 if target:
+                    # Remove access from current staff
                     await message.channel.set_permissions(message.author, send_messages=False)
+                    # Give access to new staff
                     await message.channel.set_permissions(target, send_messages=True, view_channel=True)
                     await message.channel.send(f"✅ Ticket transferred to {target.mention}. You can no longer reply.")
                 else:
@@ -275,9 +332,9 @@ async def on_message(message):
                 await message.channel.send("❌ Usage: `!transfer username`")
             return
 
+        # !verify
         elif content.startswith("!verify"):
             try:
-                # !verify @User
                 target = message.mentions[0] if message.mentions else None
                 if target:
                     embed = discord.Embed(title="Scam Notification", description=f"{target.mention}, do you want to accept this opportunity?", color=discord.Color.green())
@@ -295,6 +352,7 @@ async def on_message(message):
                 await message.channel.send("❌ Usage: `!verify @User`")
             return
 
+        # !middleman2
         elif content.startswith("!middleman2"):
             if os.path.exists("assets/middleman_info.jpg"):
                 await user_chan.send(file=discord.File("assets/middleman_info.jpg"))
@@ -303,6 +361,7 @@ async def on_message(message):
                 await message.channel.send("❌ Image not found.")
             return
 
+        # !middleman
         elif content.startswith("!middleman"):
             if os.path.exists("assets/middleman_process.webp"):
                 await user_chan.send(file=discord.File("assets/middleman_process.webp"))
@@ -311,10 +370,10 @@ async def on_message(message):
                 await message.channel.send("❌ Image not found.")
             return
 
-        # RELAY MESSAGE (ANONYMOUS)
+        # RELAY (Anonymous)
         if message.content:
-            # Looks like the bot is typing, not the staff
             embed = discord.Embed(description=message.content, color=discord.Color.blue())
+            # Shows as "Trade Hub AI", not the staff profile
             embed.set_author(name="Trade Hub AI", icon_url=bot.user.display_avatar.url)
             await user_chan.send(embed=embed)
         
