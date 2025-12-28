@@ -13,9 +13,10 @@ OWNER_ROLE_ID = 1438892578580730027
 VERIFIED_ROLE_ID = 1439203352406921377
 STAFF_CHAT_CHANNEL_ID = 1439944303261647010
 MAIN_GUIDE_CHANNEL_ID = 1439218639847952448
+# The role to ping when user clicks "Middleman"
+MIDDLEMAN_ROLE_ID = 1438896022590984295 
 TICKET_DATA_FILE = "ticket_data.json"
 
-# Staff Roles Allowed to Claim and Close
 STAFF_ROLES = [
     1438892578580730027, 1438894594254311504, 1438895119360065666,
     1444915199529324624, 1444914892309139529, 1441060547700457584,
@@ -26,108 +27,149 @@ STAFF_ROLES = [
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Map: Staff_Channel_ID -> User_Ticket_ID
+# Maps to link Staff Channels <-> User Channels
 relay_map = {}
-# Map: User_Ticket_ID -> Staff_Channel_ID
 reverse_relay_map = {}
-# Track processed tickets to avoid double-posting
-processed_tickets = set()
 
-# --- HELPER FUNCTIONS ---
+# --- DATA HANDLING ---
 def load_ticket_data():
     if os.path.exists(TICKET_DATA_FILE):
         try:
             with open(TICKET_DATA_FILE, 'r') as f:
                 return json.load(f)
-        except json.JSONDecodeError:
-            print("⚠️ JSON Decode Error (File might be busy)")
-            return {}
+        except: return {}
     return {}
 
 def save_ticket_data(data):
     try:
         with open(TICKET_DATA_FILE, 'w') as f:
             json.dump(data, f, indent=4)
-    except Exception as e:
-        print(f"❌ Error saving JSON: {e}")
-
-async def check_category_visibility(guild):
-    category = guild.get_channel(AI_CATEGORY_ID)
-    if not category: return
-    # Hide category if 0 channels left, Show if > 0
-    await category.edit(overwrites={guild.default_role: discord.PermissionOverwrite(view_channel=len(category.channels) > 0)})
+    except Exception as e: print(f"Save Error: {e}")
 
 async def close_ticket_logic(staff_channel, user_channel_id):
-    """Deletes both channels and removes data from JSON"""
-    # 1. Delete User Channel
+    """Deletes both channels and updates JSON"""
     if user_channel_id:
-        user_chan = bot.get_channel(user_channel_id)
-        if user_chan:
-            try: await user_chan.delete()
+        chan = bot.get_channel(user_channel_id)
+        if chan: 
+            try: await chan.delete()
             except: pass
     
-    # 2. Update JSON
     data = load_ticket_data()
     found_uid = None
     if "user_middleman_tickets" in data:
-        for uid, tinfo in data["user_middleman_tickets"].items():
-            if tinfo["channel_id"] == user_channel_id:
+        for uid, t in data["user_middleman_tickets"].items():
+            if t["channel_id"] == user_channel_id:
                 found_uid = uid
                 break
         if found_uid:
             del data["user_middleman_tickets"][found_uid]
             save_ticket_data(data)
 
-    # 3. Delete Staff Channel
-    try: await staff_channel.delete()
-    except: pass
-    
-    # 4. Check Visibility
-    if staff_channel.guild:
-        await check_category_visibility(staff_channel.guild)
+    if staff_channel:
+        try: await staff_channel.delete()
+        except: pass
 
-# --- VIEWS & LOGIC ---
+# --- VIEWS ---
+
+class StaffClaimView(discord.ui.View):
+    """Persistent view for Staff to claim the AI ticket"""
+    def __init__(self, staff_channel):
+        super().__init__(timeout=None)
+        self.staff_channel = staff_channel
+
+    @discord.ui.button(label="Claim Ticket", style=discord.ButtonStyle.green, custom_id="staff_claim_btn")
+    async def claim(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # 1. Check Permissions
+        if not any(r.id in STAFF_ROLES for r in interaction.user.roles):
+            return await interaction.response.send_message("❌ Staff only.", ephemeral=True)
+        
+        # 2. Lock Channel to Claimer
+        overwrites = interaction.channel.overwrites
+        # Allow claimer
+        overwrites[interaction.user] = discord.PermissionOverwrite(send_messages=True, view_channel=True)
+        # Deny other staff (except Owner)
+        for rid in STAFF_ROLES:
+            role = interaction.guild.get_role(rid)
+            if role and rid != OWNER_ROLE_ID:
+                overwrites[role] = discord.PermissionOverwrite(send_messages=False, view_channel=True)
+        
+        await interaction.channel.edit(overwrites=overwrites)
+        
+        button.disabled = True
+        button.label = f"Claimed by {interaction.user.name}"
+        await interaction.response.edit_message(view=self)
+        await interaction.channel.send(f"✅ **Ticket Claimed!** You are now connected to the user.\nType here to message them.")
 
 class ChoiceView(discord.ui.View):
-    def __init__(self):
+    """The AI vs Middleman Selection"""
+    def __init__(self, owner_id):
         super().__init__(timeout=None)
+        self.owner_id = owner_id
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("❌ You did not create this ticket.", ephemeral=True)
+            return False
+        return True
 
     @discord.ui.button(label="AI", style=discord.ButtonStyle.blurple, custom_id="ai_choice")
     async def ai_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(AIModal())
+        await interaction.response.send_modal(AIModal(self.owner_id))
 
     @discord.ui.button(label="Middleman", style=discord.ButtonStyle.gray, custom_id="mm_choice")
     async def mm_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # 1. Release Lock in JSON
         data = load_ticket_data()
         found = False
-        for uid, tinfo in data.get("user_middleman_tickets", {}).items():
-            if tinfo["channel_id"] == interaction.channel.id:
-                tinfo["claimer"] = None # Free up ticket
+        for uid, t in data.get("user_middleman_tickets", {}).items():
+            if t["channel_id"] == interaction.channel.id:
+                t["claimer"] = None # Unlock
                 save_ticket_data(data)
                 found = True
                 break
         
+        # 2. Delete the Embed
+        await interaction.message.delete()
+        
+        # 3. Ping Middleman
         if found:
-            await interaction.response.send_message("✅ AI disabled. Waiting for human middleman to claim.", ephemeral=False)
-            await interaction.message.delete()
+            await interaction.channel.send(f"🔔 <@&{MIDDLEMAN_ROLE_ID}> **Middleman Requested!**\nA staff member can now claim this ticket above.")
         else:
-            await interaction.response.send_message("❌ Ticket not found in database.", ephemeral=True)
+            await interaction.response.send_message("❌ Error: Ticket not found in DB.", ephemeral=True)
 
 class AIModal(discord.ui.Modal, title="AI Trade Application"):
-    trade_info = discord.ui.TextInput(label="Trade Details", placeholder="I am giving...", style=discord.TextStyle.paragraph)
-    users = discord.ui.TextInput(label="Users Involved", placeholder="Usernames...")
+    trade_info = discord.ui.TextInput(label="Trade Details", placeholder="Example: My Kitsune for 2 Dragons", style=discord.TextStyle.paragraph)
+    users = discord.ui.TextInput(label="Add User (Username)", placeholder="friend_name")
+
+    def __init__(self, owner_id):
+        super().__init__()
+        self.owner_id = owner_id
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         guild = interaction.guild
-        category = guild.get_channel(AI_CATEGORY_ID)
         
-        if category:
-            await category.edit(overwrites={guild.default_role: discord.PermissionOverwrite(view_channel=True)})
+        # --- 1. Add the Second User ---
+        target_name = self.users.value.strip()
+        target_member = None
+        # Try to find user by name
+        target_member = discord.utils.get(guild.members, name=target_name)
+        
+        if target_member:
+            await interaction.channel.set_permissions(target_member, view_channel=True, send_messages=True)
+            added_text = f"{target_member.mention} has been added to the ticket."
+        else:
+            added_text = f"⚠️ Could not find user '{target_name}'. You can add them manually."
+
+        # --- 2. Create Staff Relay Channel ---
+        category = guild.get_channel(AI_CATEGORY_ID)
+        # Unhide category
+        await category.edit(overwrites={guild.default_role: discord.PermissionOverwrite(view_channel=True)})
 
         rand_id = str(random.randint(1, 9999)).zfill(4)
         chan_name = f"ai-{interaction.user.name}-{rand_id}"
         
+        # Permissions: Staff SEE but CANNOT TYPE
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
             guild.get_role(OWNER_ROLE_ID): discord.PermissionOverwrite(view_channel=True, send_messages=True)
@@ -136,35 +178,25 @@ class AIModal(discord.ui.Modal, title="AI Trade Application"):
             role = guild.get_role(rid)
             if role: overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=False)
 
-        if category:
-            staff_chan = await category.create_text_channel(name=chan_name, overwrites=overwrites)
-            relay_map[staff_chan.id] = interaction.channel.id
-            reverse_relay_map[interaction.channel.id] = staff_chan.id
+        staff_chan = await category.create_text_channel(name=chan_name, overwrites=overwrites)
+        relay_map[staff_chan.id] = interaction.channel.id
+        reverse_relay_map[interaction.channel.id] = staff_chan.id
 
-            view = discord.ui.View(timeout=None)
-            claim_btn = discord.ui.Button(label="Claim Ticket", style=discord.ButtonStyle.green)
-            
-            async def claim_callback(itn):
-                if not any(r.id in STAFF_ROLES for r in itn.user.roles): return
-                await staff_chan.set_permissions(itn.user, send_messages=True)
-                for rid in STAFF_ROLES:
-                    role = guild.get_role(rid)
-                    if role and rid != OWNER_ROLE_ID:
-                        await staff_chan.set_permissions(role, send_messages=False)
-                await itn.response.send_message(f"✅ Claimed by {itn.user.mention}")
-                claim_btn.disabled = True
-                await itn.message.edit(view=view)
+        # --- 3. Send Controls to Staff ---
+        view = StaffClaimView(staff_chan)
+        await staff_chan.send(
+            f"**🤖 New AI Ticket**\n"
+            f"**User:** {interaction.user.mention}\n"
+            f"**Trade:** {self.trade_info.value}\n"
+            f"**Other User:** {self.users.value}\n"
+            f"**Channel:** {interaction.channel.mention}", 
+            view=view
+        )
 
-            claim_btn.callback = claim_callback
-            view.add_item(claim_btn)
-            
-            await staff_chan.send(f"**New AI Ticket**\n**Trade:** {self.trade_info.value}\n**Users:** {self.users.value}\n**User Channel:** {interaction.channel.mention}", view=view)
-            
-            embed = discord.Embed(title="Confirm Trade", description=f"**Trade:** {self.trade_info.value}\n**Users:** {self.users.value}\n\nDo you guys want to trade?", color=discord.Color.blue())
-            await interaction.channel.send(embed=embed, view=TradePollView())
-            await interaction.followup.send("Application sent!", ephemeral=True)
-        else:
-             await interaction.followup.send("❌ AI Category not found. Contact Admin.", ephemeral=True)
+        # --- 4. Send Poll to User Channel ---
+        embed = discord.Embed(title="Confirm Trade", description=f"**Trade:** {self.trade_info.value}\n**Participants:** {interaction.user.mention} & {self.users.value}\n\n{added_text}\n\nDo you both agree?", color=discord.Color.blue())
+        await interaction.channel.send(embed=embed, view=TradePollView())
+        await interaction.followup.send("Application Submitted!", ephemeral=True)
 
 class TradePollView(discord.ui.View):
     def __init__(self):
@@ -172,24 +204,18 @@ class TradePollView(discord.ui.View):
         self.votes = {}
 
     async def check_votes(self, interaction):
-        if len(self.votes) < 2: return
+        if len(self.votes) < 2: return # Wait for 2 people
         
         if all(self.votes.values()):
-            await interaction.channel.send("✅ **Trade Accepted!** Proceeding...")
+            await interaction.channel.send("✅ **Both Accepted!** Waiting for Middleman to guide you...")
         elif not any(self.votes.values()):
-            await interaction.channel.send("❌ As you both declined I am closing this ticket you can open middleman ticket any time you want.")
-            await asyncio.sleep(5)
+            await interaction.channel.send("❌ Both declined. Closing ticket...")
+            await asyncio.sleep(3)
             staff_chan_id = reverse_relay_map.get(interaction.channel.id)
             staff_chan = interaction.guild.get_channel(staff_chan_id) if staff_chan_id else None
-            if staff_chan: await close_ticket_logic(staff_chan, interaction.channel.id)
-            else: await interaction.channel.delete()
+            await close_ticket_logic(staff_chan, interaction.channel.id)
         else:
-            await interaction.channel.send("⚠️ One accepted, one declined. Please decide whether you guys trading or not you can open a middleman ticket any time you want.")
-            await asyncio.sleep(5)
-            staff_chan_id = reverse_relay_map.get(interaction.channel.id)
-            staff_chan = interaction.guild.get_channel(staff_chan_id) if staff_chan_id else None
-            if staff_chan: await close_ticket_logic(staff_chan, interaction.channel.id)
-            else: await interaction.channel.delete()
+            await interaction.channel.send("⚠️ Disagreement. Please discuss.")
 
     @discord.ui.button(label="Accept", style=discord.ButtonStyle.green)
     async def accept(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -203,97 +229,95 @@ class TradePollView(discord.ui.View):
         await interaction.response.send_message(f"{interaction.user.mention} Declined.", ephemeral=False)
         await self.check_votes(interaction)
 
-# --- MAIN LOOPS & EVENTS ---
+# --- EVENTS ---
 
-@tasks.loop(seconds=5)
-async def backup_claim_loop():
-    """Backup loop: Checks for tickets that the on_message event might have missed."""
+@tasks.loop(seconds=4)
+async def monitor_tickets():
+    """Backup: Finds open tickets that are unclaimed and locks them."""
     data = load_ticket_data()
-    for uid, tinfo in data.get("user_middleman_tickets", {}).items():
-        chan_id = tinfo.get("channel_id")
-        
-        # If ticket exists, has NO claimer, and we haven't processed it yet
-        if chan_id and tinfo.get("claimer") is None and chan_id not in processed_tickets:
-            channel = bot.get_channel(chan_id)
-            if channel:
-                print(f"🔄 Backup Loop: Found unclaimed ticket {chan_id}. Hijacking...")
+    changed = False
+    
+    for uid, t in data.get("user_middleman_tickets", {}).items():
+        # If ticket is open (has channel_id) but claimer is None
+        if t.get("channel_id") and t.get("claimer") is None:
+            # Check if we already processed this in memory (prevents double post)
+            if t.get("ai_locked"): continue 
+            
+            chan = bot.get_channel(t["channel_id"])
+            if chan:
+                # Lock it
+                t["claimer"] = bot.user.id
+                t["ai_locked"] = True # New flag to track if we sent the embed
+                changed = True
                 
-                # Hijack JSON
-                tinfo["claimer"] = bot.user.id
-                save_ticket_data(data)
+                # Identify owner
+                owner_id = int(t.get("user_id", 0))
                 
                 # Send Embed
-                processed_tickets.add(chan_id)
                 embed = discord.Embed(title="Trade Assistant", description="Do you want AI to handle your trade or our middleman?", color=discord.Color.gold())
-                await channel.send(embed=embed, view=ChoiceView())
+                await chan.send(embed=embed, view=ChoiceView(owner_id))
+                print(f"🔒 Locked ticket {chan.name}")
+
+    if changed:
+        save_ticket_data(data)
 
 @bot.event
 async def on_ready():
     print(f"✅ Relay Bot Online: {bot.user}")
-    print(f"✅ Monitoring Category: {AI_CATEGORY_ID}")
-    if not backup_claim_loop.is_running():
-        backup_claim_loop.start()
+    if not monitor_tickets.is_running():
+        monitor_tickets.start()
 
 @bot.event
 async def on_message(message):
     if message.author.id == bot.user.id: return
 
-    # 1. INSTANT CLAIM LOGIC (Watch for Main Bot's Embed)
+    # 1. INSTANT CLAIM (Triggered by Bot.py's Embed)
     if message.author.bot and message.embeds:
         if "Middleman Ticket" in (message.embeds[0].title or ""):
-            print(f"👀 Saw New Ticket: {message.channel.name} ({message.channel.id})")
-            
-            # Retry logic for JSON race condition
-            for attempt in range(3):
-                data = load_ticket_data()
-                found = False
-                for uid, tinfo in data.get("user_middleman_tickets", {}).items():
-                    if tinfo["channel_id"] == message.channel.id:
-                        tinfo["claimer"] = bot.user.id # Bot claims it instantly
-                        save_ticket_data(data)
-                        processed_tickets.add(message.channel.id)
-                        
-                        embed = discord.Embed(title="Trade Assistant", description="Do you want AI to handle your trade or our middleman?", color=discord.Color.gold())
-                        await message.channel.send(embed=embed, view=ChoiceView())
-                        print("✅ Instantly claimed ticket!")
-                        found = True
-                        break
-                
-                if found: break
-                print(f"⚠️ JSON not ready yet, retrying {attempt+1}/3...")
-                await asyncio.sleep(1)
+            # Fast Hijack
+            data = load_ticket_data()
+            for uid, t in data.get("user_middleman_tickets", {}).items():
+                if t["channel_id"] == message.channel.id:
+                    # Double check we didn't already lock it
+                    if t.get("claimer") == bot.user.id: return 
 
-    # 2. RELAY & COMMANDS LOGIC
+                    t["claimer"] = bot.user.id
+                    t["ai_locked"] = True
+                    save_ticket_data(data)
+                    
+                    owner_id = int(t.get("user_id", 0))
+                    embed = discord.Embed(title="Trade Assistant", description="Do you want AI to handle your trade or our middleman?", color=discord.Color.gold())
+                    await message.channel.send(embed=embed, view=ChoiceView(owner_id))
+                    print(f"⚡ Instant Lock: {message.channel.name}")
+                    break
+
+    # 2. RELAY & COMMANDS
     if message.channel.id in relay_map:
-        user_chan_id = relay_map[message.channel.id]
-        user_chan = bot.get_channel(user_chan_id)
-        
+        user_chan = bot.get_channel(relay_map[message.channel.id])
+        if not user_chan: return
+
         if message.content.lower() == "!close":
             if any(r.id in STAFF_ROLES for r in message.author.roles):
-                await message.channel.send("⚠️ Closing ticket...")
+                await message.channel.send("Closing...")
                 await asyncio.sleep(2)
-                await close_ticket_logic(message.channel, user_chan_id)
+                await close_ticket_logic(message.channel, user_chan.id)
             return
 
-        if user_chan:
-            content = message.content.lower()
-            if content == "!middleman1":
-                if os.path.exists("assets/middleman_process.webp"): await user_chan.send(file=discord.File("assets/middleman_process.webp"))
-            elif content == "!middleman2":
-                if os.path.exists("assets/middleman_info.jpg"): await user_chan.send(file=discord.File("assets/middleman_info.jpg"))
-            elif content.startswith("!verify"):
-                # Simplified Verify trigger (assumes mention)
-                target = message.mentions[0] if message.mentions else None
-                if target: await message.channel.send(f"✅ Verification logic triggered for {target.name}") # Placeholder for full logic
-            else:
-                embed = discord.Embed(description=message.content, color=discord.Color.blue())
-                embed.set_author(name="Middleman", icon_url=message.author.display_avatar.url)
-                await user_chan.send(embed=embed)
+        # Simple Image Commands
+        if message.content == "!middleman1" and os.path.exists("assets/middleman_process.webp"):
+            await user_chan.send(file=discord.File("assets/middleman_process.webp"))
+        elif message.content == "!middleman2" and os.path.exists("assets/middleman_info.jpg"):
+            await user_chan.send(file=discord.File("assets/middleman_info.jpg"))
+        else:
+            # Text Relay
+            embed = discord.Embed(description=message.content, color=discord.Color.blue())
+            embed.set_author(name="Middleman", icon_url=message.author.display_avatar.url)
+            await user_chan.send(embed=embed)
 
     await bot.process_commands(message)
 
-# RUN WITH ENV VARIABLE
+# RUN
 if os.getenv("AI_BOT_TOKEN"):
     bot.run(os.getenv("AI_BOT_TOKEN"))
 else:
-    print("❌ Error: AI_BOT_TOKEN not found")
+    print("❌ AI_BOT_TOKEN missing!")
