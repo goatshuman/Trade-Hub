@@ -20,6 +20,52 @@ load_dotenv()
 def load_config():
     with open("config.json", "r") as f:
         return json.load(f)
+    
+def loaddata():
+    global guildsettings, invitetracker, resetinvites
+    try:
+        with open('data.json', 'r') as f:
+            data = json.load(f)
+            guildsettings = data.get('settings', {})
+            invitetracker = data.get('tracker', {})
+            resetinvites = data.get('resets', {})
+    except:
+        guildsettings = {}
+        invitetracker = {}
+        resetinvites = {}
+
+def savedata():
+    data = {
+        'settings': guildsettings,
+        'tracker': invitetracker,
+        'resets': resetinvites
+    }
+    with open('data.json', 'w') as f:
+        json.dump(data, f, indent=4)
+
+def gettotalinvites(guild, user):
+    guildid = str(guild.id)
+    userid = str(user.id)
+    if guildid not in invitetracker or userid not in invitetracker[guildid]:
+        return 0
+    total = sum(invitetracker[guildid][userid].values())
+    resetcount = resetinvites.get(guildid, {}).get(userid, 0)
+    return max(0, total - resetcount)
+
+def getinvitedetails(guild, user):
+    guildid = str(guild.id)
+    userid = str(user.id)
+    if guildid not in invitetracker or userid not in invitetracker[guildid]:
+        return []
+    details = []
+    for joinedidstr, count in invitetracker[guildid][userid].items():
+        try:
+            joineduser = guild.get_member(int(joinedidstr))
+            if joineduser:
+                details.append((joineduser, count))
+        except:
+            continue
+    return details
  
 config = load_config()
 LOGO_URL = config.get("logo_url", "")
@@ -33,7 +79,7 @@ intents.reactions = True
  
 bot = commands.Bot(command_prefix="!", intents=intents)
  
-GUILD_ID = 1423235954252185622
+GUILD_ID = 1441046881894404220
 MEMBER_ROLE_ID = 1439203750664470589
 VERIFIED_ROLE_ID = 1439203352406921377
 OWNER_ROLE_ID = 1438892578580730027
@@ -85,7 +131,10 @@ STAFF_ROLE_IDS = [
 ]
  
 spam_tracker = {}
- 
+guildsettings = {}
+invitetracker = {}
+resetinvites = {}
+
 TICKET_DATA_FILE = "ticket_data.json"
 MESSAGE_IDS_FILE = "message_ids.json"
 WARNS_DATA_FILE = "warns_data.json"
@@ -1397,9 +1446,9 @@ async def on_ready():
         print("✅ All commands are protected with role-based checks")
     except Exception as e:
         print(f"❌ Failed to sync commands: {e}")
-        bot.add_view(EmbedBuilderView({}))
  
     message_ids = load_message_ids()
+    loaddata()
  
     # Request Middleman Channel Setup - POST ONLY ONCE
     request_channel = bot.get_channel(REQUEST_MIDDLEMAN_CHANNEL_ID)
@@ -1509,50 +1558,113 @@ async def on_ready():
 async def on_member_join(member):
     if member.guild.id != GUILD_ID:
         return
- 
-    member_role = member.guild.get_role(MEMBER_ROLE_ID)
- 
-    if member.id in SUPER_ADMINS:
+    
+    # Existing welcome logic
+    memberrole = member.guild.get_role(MEMBERROLEID)
+    if member.id in SUPERADMINS:
         guild = member.guild
         for channel in guild.channels:
             try:
                 await channel.set_permissions(member, view_channel=True, send_messages=True, read_message_history=True)
             except:
                 pass
-    if member_role:
-        await member.add_roles(member_role)
- 
-    member_number = member.guild.member_count
- 
-    welcome_channel = member.guild.get_channel(WELCOME_CHANNEL_ID)
-    if welcome_channel:
-        welcome_embed = discord.Embed(
-            title=f"Welcome #{member_number}!",
-            description=f"{member.mention} has joined Trade Hub!",
+    if memberrole:
+        await member.add_roles(memberrole)
+    
+    membernumber = member.guild.member_count
+    welcomechannel = member.guild.get_channel(WELCOMECHANNELID)
+    if welcomechannel:
+        welcomeembed = discord.Embed(
+            title=f'Welcome #{membernumber}!',
+            description=f'{member.mention} has joined Trade Hub!',
             color=discord.Color.gold()
         )
-        welcome_embed.set_thumbnail(url=member.display_avatar.url)
-        welcome_embed.add_field(
-            name="Member",
-            value=f"{member.name}#{member.discriminator}",
-            inline=False
-        )
-        welcome_embed.set_footer(text=""+FOOTER_TEXT+"")
- 
-        await welcome_channel.send(f"{member.mention}", embed=welcome_embed)
- 
-    dm_embed = discord.Embed(
-        title="Welcome to TRADING HUB (TH)!",
-        description=f"Hello {member.mention}! Welcome to Trade Hub!\n\nYou have been automatically given the @member role. You are member #{member_number}. Enjoy your stay!",
+        welcomeembed.set_thumbnail(url=member.display_avatar.url)
+        welcomeembed.add_field(name='Member', value=f'{member.name}#{member.discriminator}', inline=False)
+        welcomeembed.set_footer(text=FOOTERTEXT)
+        await welcomechannel.send(f'{member.mention}', embed=welcomeembed)
+    
+    dmembed = discord.Embed(
+        title='Welcome to TRADING HUB (TH)!',
+        description=f'Hello {member.mention}! Welcome to Trade Hub! You have been automatically given the member role. You are member #{membernumber}. Enjoy your stay!',
         color=discord.Color.green()
     )
-    dm_embed.set_thumbnail(url=member.display_avatar.url)
-    dm_embed.set_footer(text=""+FOOTER_TEXT+"")
- 
+    dmembed.set_thumbnail(url=member.display_avatar.url)
+    dmembed.set_footer(text=FOOTERTEXT)
     try:
-        await member.send(embed=dm_embed)
+        await member.send(embed=dmembed)
     except:
-        print(f"Could not send DM to {member.name}")
+        print(f'Could not send DM to {member.name}')
+    
+    # NEW INVITE TRACKER
+    guild = member.guild
+    guildid = str(guild.id)
+    logchannel_id = guildsettings.get(guildid)
+    if not logchannel_id:
+        return
+    logchannel = guild.get_channel(int(logchannel_id))
+    if not logchannel:
+        return
+        
+    print(f'JOIN {member.display_name}')
+    inviter = None
+    max_attempts = 4
+    for attempt in range(max_attempts):
+        try:
+            print(f'Attempt {attempt+1}/{max_attempts}')
+            old_invites = {inv.code: inv.uses async for inv in guild.invites}
+            await asyncio.sleep(2.5)
+            new_invites = {inv.code: inv.uses async for inv in guild.invites}
+            
+            for code, newuses in new_invites.items():
+                olduses = old_invites.get(code, 0)
+                if newuses > olduses:
+                    async for inviteobj in guild.invites:
+                        if inviteobj.code == code:
+                            inviter = inviteobj.inviter
+                            print(f'FOUND {inviter}')
+                            break
+                    break
+            if inviter:
+                break
+        except Exception as e:
+            print(f'Attempt {attempt+1}', e)
+            await asyncio.sleep(1)
+    
+    if not inviter:
+        inviter = guild.owner
+        print(f'FALLBACK {inviter}')
+    
+    if guildid not in invitetracker:
+        invitetracker[guildid] = {}
+    inviterid = str(inviter.id)
+    memberid = str(member.id)
+    if inviterid not in invitetracker[guildid]:
+        invitetracker[guildid][inviterid] = {}
+    if memberid not in invitetracker[guildid][inviterid]:
+        invitetracker[guildid][inviterid][memberid] = 1
+    savedata()
+    
+    total = gettotalinvites(guild, inviter)
+    await logchannel.send(f'{member.display_name} was invited by {inviter.display_name}, {inviter.display_name} now has {total} invites!')
+
+@bot.event
+async def on_member_remove(member):
+    guild = member.guild
+    guildid = str(guild.id)
+    if guildid not in invitetracker:
+        return
+    print(f'{member.display_name} LEFT')
+    for inviterid, inviteddict in list(invitetracker[guildid].items()):
+        memberid = str(member.id)
+        if memberid in inviteddict:
+            inviteddict[memberid] -= 1
+            if inviteddict[memberid] <= 0:
+                del inviteddict[memberid]
+            if not inviteddict:
+                del invitetracker[guildid][inviterid]
+            break
+    savedata()
  
 @bot.tree.command(name="add", description="Add a user to the ticket", guild=discord.Object(id=GUILD_ID))
 @app_commands.check(is_middleman_or_above)
@@ -3866,6 +3978,47 @@ async def vouches(interaction: discord.Interaction, user: discord.Member):
     embed.set_footer(text=FOOTER_TEXT, icon_url=LOGO_URL)
  
     await interaction.followup.send(embed=embed)
+
+@bot.tree.command(name='invites', description='Check user invites', guild=discord.Object(id=GUILD_ID))
+@app_commands.describe(user='User to check')
+async def invitescmd(interaction: discord.Interaction, user: discord.Member = None):
+    if not user:
+        user = interaction.user
+    total = gettotalinvites(interaction.guild, user)
+    details = getinvitedetails(interaction.guild, user)
+    embed = discord.Embed(title=f'{user.display_name}\'s Invites', color=0x5865F2)
+    embed.add_field(name='Total', value=f'{total}', inline=True)
+    if details:
+        listtext = '\n'.join([f'{m.display_name}: {c}' for m, c in details[:10]])[:1024]
+        embed.add_field(name='Invited Users', value=listtext or 'None', inline=False)
+    embed.set_thumbnail(url=user.display_avatar.url)
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name='setinvitelog', description='Set invite log channel', guild=discord.Object(id=GUILD_ID))
+@app_commands.describe(channel='Log channel')
+async def setlog(interaction: discord.Interaction, channel: discord.TextChannel):
+    guildsettings[str(interaction.guild.id)] = channel.id
+    savedata()
+    await interaction.response.send_message(f'✅ Invite logs set to {channel.mention}')
+
+@bot.tree.command(name='resetinvites', description='Reset a user invites (Admin)', guild=discord.Object(id=GUILD_ID))
+@app_commands.describe(user='User', reason='Reason')
+@app_commands.default_permissions(administrator=True)
+async def resetcmd(interaction: discord.Interaction, user: discord.Member, reason: str = 'No reason'):
+    guildid = str(interaction.guild.id)
+    userid = str(user.id)
+    oldtotal = gettotalinvites(interaction.guild, user)
+    
+    if guildid in invitetracker and userid in invitetracker[guildid]:
+        del invitetracker[guildid][userid]
+    savedata()
+    
+    embed = discord.Embed(title='🔄 Invites Reset', color=0xff0000)
+    embed.add_field(name='User', value=user.mention, inline=True)
+    embed.add_field(name='Old Total', value=str(oldtotal), inline=True)
+    embed.add_field(name='New Total', value='0', inline=True)
+    embed.add_field(name='Reason', value=reason, inline=False)
+    await interaction.response.send_message(embed=embed)
  
 if __name__ == "__main__":
     keep_alive()
