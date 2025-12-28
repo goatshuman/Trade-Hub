@@ -33,7 +33,7 @@ intents.reactions = True
  
 bot = commands.Bot(command_prefix="!", intents=intents)
  
-GUILD_ID = 1423235954252185622
+GUILD_ID = 1441046881894404220
 MEMBER_ROLE_ID = 1439203750664470589
 VERIFIED_ROLE_ID = 1439203352406921377
 OWNER_ROLE_ID = 1438892578580730027
@@ -89,6 +89,247 @@ spam_tracker = {}
 TICKET_DATA_FILE = "ticket_data.json"
 MESSAGE_IDS_FILE = "message_ids.json"
 WARNS_DATA_FILE = "warns_data.json"
+
+# Embed Builder Command - FIXED VERSION
+class EmbedTitleModal(discord.ui.Modal, title="Embed Title"):
+    title_input = discord.ui.TextInput(
+        label="Embed Title",
+        placeholder="Enter embed title (max 256 chars)",
+        max_length=256,
+        required=False
+    )
+    
+    def __init__(self, embed_data):
+        super().__init__()
+        self.embed_data = embed_data
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        self.embed_data['title'] = self.title_input.value
+        await interaction.response.defer()
+        embed = discord.Embed.from_dict(self.embed_data)
+        view = EmbedBuilderView(self.embed_data)
+        await interaction.message.edit(embed=embed, view=view)
+
+class EmbedDescriptionModal(discord.ui.Modal, title="Embed Description"):
+    descinput = discord.ui.TextInput(
+        label="Embed Description",
+        placeholder="Enter embed description (max 4000 chars)",
+        style=discord.TextStyle.paragraph,
+        max_length=4000,  # Fixed!
+        required=False
+    )
+    
+    def __init__(self, embeddata):
+        super().__init__()
+        self.embeddata = embeddata
+        
+    async def on_submit(self, interaction: discord.Interaction):
+        self.embeddata['description'] = self.descinput.value
+        embed = discord.Embed.from_dict(self.embeddata)
+        view = EmbedBuilderView(self.embeddata)
+        await interaction.response.defer()
+        await interaction.message.edit(embed=embed, view=view)  # Also fix this!
+
+class EmbedColorModal(discord.ui.Modal, title="Embed Color"):
+    color_input = discord.ui.TextInput(
+        label="Hex Color (e.g. #FF0000 or 16711680)",
+        placeholder="#FF0000 or 16711680 (decimal)",
+        required=False
+    )
+    
+    def __init__(self, embed_data):
+        super().__init__()
+        self.embed_data = embed_data
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        color = self.color_input.value
+        if color:
+            try:
+                if color.startswith('#'):
+                    self.embed_data['color'] = int(color[1:], 16)
+                else:
+                    self.embed_data['color'] = int(color)
+            except:
+                pass
+        await interaction.response.defer()
+        embed = discord.Embed.from_dict(self.embed_data)
+        view = EmbedBuilderView(self.embed_data)
+        await interaction.edit_original_response(embed=embed, view=view)
+
+class EmbedFieldModal(discord.ui.Modal, title="Add Field"):
+    name_input = discord.ui.TextInput(
+        label="Field Name",
+        placeholder="Field name (max 256 chars)",
+        max_length=256,
+        required=True
+    )
+    value_input = discord.ui.TextInput(
+        label="Field Value",
+        placeholder="Field value (max 1024 chars)",
+        style=discord.TextStyle.paragraph,
+        max_length=1024,
+        required=True
+    )
+    inline_input = discord.ui.TextInput(
+        label="Inline? (true/false)",
+        placeholder="true or false",
+        required=False,
+        default="false"
+    )
+    
+    def __init__(self, embed_data):
+        super().__init__()
+        self.embed_data = embed_data
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        field = {
+            'name': self.name_input.value,
+            'value': self.value_input.value,
+            'inline': self.inline_input.value.lower() == 'true'
+        }
+        
+        if 'fields' not in self.embed_data:
+            self.embed_data['fields'] = []
+        self.embed_data['fields'].append(field)
+        
+        embed = discord.Embed.from_dict(self.embed_data)
+        view = EmbedBuilderView(self.embed_data)
+        await interaction.response.edit_message(embed=embed, view=view)
+
+class EmbedImageModal(discord.ui.Modal, title="Image URL"):
+    image_input = discord.ui.TextInput(
+        label="Image URL",
+        placeholder="https://example.com/image.png",
+        required=False
+    )
+    
+    def __init__(self, embed_data):
+        super().__init__()
+        self.embed_data = embed_data
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        if self.image_input.value:
+            self.embed_data['image'] = {'url': self.image_input.value}
+        embed = discord.Embed.from_dict(self.embed_data)
+        view = EmbedBuilderView(self.embed_data)
+        await interaction.response.edit_message(embed=embed, view=view)
+
+class EmbedThumbnailModal(discord.ui.Modal, title="Thumbnail URL"):
+    thumb_input = discord.ui.TextInput(
+        label="Thumbnail URL",
+        placeholder="https://example.com/thumb.png",
+        required=False
+    )
+    
+    def __init__(self, embed_data):
+        super().__init__()
+        self.embed_data = embed_data
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        if self.thumb_input.value:
+            self.embed_data['thumbnail'] = {'url': self.thumb_input.value}
+        embed = discord.Embed.from_dict(self.embed_data)
+        view = EmbedBuilderView(self.embed_data)
+        await interaction.response.edit_message(embed=embed, view=view)
+
+class EmbedAuthorModal(discord.ui.Modal, title="Author"):
+    name_input = discord.ui.TextInput(label="Author Name", required=False)
+    icon_input = discord.ui.TextInput(label="Author Icon URL", placeholder="https://...", required=False)
+    
+    def __init__(self, embed_data):
+        super().__init__()
+        self.embed_data = embed_data
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        if self.name_input.value:
+            self.embed_data['author'] = {
+                'name': self.name_input.value,
+                'icon_url': self.icon_input.value
+            }
+        embed = discord.Embed.from_dict(self.embed_data)
+        view = EmbedBuilderView(self.embed_data)
+        await interaction.response.edit_message(embed=embed, view=view)
+
+class EmbedFooterModal(discord.ui.Modal, title="Footer"):
+    text_input = discord.ui.TextInput(label="Footer Text", required=False)
+    icon_input = discord.ui.TextInput(label="Footer Icon URL", placeholder="https://...", required=False)
+    
+    def __init__(self, embed_data):
+        super().__init__()
+        self.embed_data = embed_data
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        if self.text_input.value:
+            self.embed_data['footer'] = {
+                'text': self.text_input.value,
+                'icon_url': self.icon_input.value
+            }
+        embed = discord.Embed.from_dict(self.embed_data)
+        view = EmbedBuilderView(self.embed_data)
+        await interaction.response.edit_message(embed=embed, view=view)
+
+class EmbedBuilderView(discord.ui.View):
+    def __init__(self, embed_data):
+        super().__init__(timeout=600)
+        self.embed_data = embed_data
+    
+    @discord.ui.button(label="📝 Title", style=discord.ButtonStyle.primary, row=0)
+    async def title_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(EmbedTitleModal(self.embed_data))
+    
+    @discord.ui.button(label="📄 Desc", style=discord.ButtonStyle.primary, row=0)
+    async def desc_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(EmbedDescriptionModal(self.embed_data))
+    
+    @discord.ui.button(label="🎨 Color", style=discord.ButtonStyle.secondary, row=0)
+    async def color_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(EmbedColorModal(self.embed_data))
+    
+    @discord.ui.button(label="➕ Field", style=discord.ButtonStyle.green, row=1)
+    async def field_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(EmbedFieldModal(self.embed_data))
+    
+    @discord.ui.button(label="🖼️ Image", style=discord.ButtonStyle.secondary, row=1)
+    async def image_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(EmbedImageModal(self.embed_data))
+    
+    @discord.ui.button(label="🔍 Thumb", style=discord.ButtonStyle.secondary, row=1)
+    async def thumb_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(EmbedThumbnailModal(self.embed_data))
+    
+    @discord.ui.button(label="👤 Author", style=discord.ButtonStyle.secondary, row=2)
+    async def author_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(EmbedAuthorModal(self.embed_data))
+    
+    @discord.ui.button(label="📄 Footer", style=discord.ButtonStyle.secondary, row=2)
+    async def footer_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(EmbedFooterModal(self.embed_data))
+    
+    @discord.ui.button(label="✅ SEND", style=discord.ButtonStyle.success, row=2)
+    async def send_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        try:
+            embed = discord.Embed.from_dict(self.embed_data)
+            await interaction.response.send_message("✅ **Embed sent below!**", ephemeral=True)
+            await interaction.channel.send(embed=embed)
+            await interaction.edit_original_response(content="✅ **Embed created & sent successfully!**", embed=None, view=None)
+        except Exception as e:
+            await interaction.response.send_message(f"❌ **Error:** {str(e)}", ephemeral=True)
+
+@bot.tree.command(name="embed", description="🛠️ Interactive embed builder", guild=discord.Object(id=GUILD_ID))
+async def embed_builder(interaction: discord.Interaction):
+    embed_data = {}
+    embed = discord.Embed(
+        title="🛠️ Embed Builder",
+        description="**Click buttons to customize your embed!**\n\n• 📝 Title & Description\n• 🎨 Custom Colors\n• ➕ Unlimited Fields\n• 🖼️ Images/Thumbnails\n• 👤 Author & Footer\n• **Live preview updates instantly!**",
+        color=0x00ff88
+    )
+    embed.set_thumbnail(url=LOGO_URL)
+    embed.set_footer(text=FOOTER_TEXT, icon_url=LOGO_URL)
+    
+    view = EmbedBuilderView(embed_data)
+    await interaction.response.send_message(embed=embed, view=view, ephemeral=False)
+
+
  
 def load_ticket_data():
     default_data = {"user_middleman_tickets": {}, "user_support_tickets": {}, "user_buyranks_tickets": {}, "user_buyitems_tickets": {}, "user_personal_middleman_tickets": {}, "ticket_counter": 0, "buyranks_counter": 0, "buyitems_counter": 0, "personal_mm_counter": 0}
@@ -192,10 +433,8 @@ async def check_and_update_category_visibility(guild, ticket_type):
             return
  
         if ticket_count == 0:
-            # Hide category - remove everyone view permission
             await category.edit(overwrites={guild.default_role: discord.PermissionOverwrite(view_channel=False)})
         else:
-            # Show category - allow everyone to view
             await category.edit(overwrites={guild.default_role: discord.PermissionOverwrite(view_channel=True)})
     except Exception as e:
         print(f"Error updating category visibility: {e}")
@@ -1158,6 +1397,7 @@ async def on_ready():
         print("✅ All commands are protected with role-based checks")
     except Exception as e:
         print(f"❌ Failed to sync commands: {e}")
+        bot.add_view(EmbedBuilderView({}))
  
     message_ids = load_message_ids()
  
