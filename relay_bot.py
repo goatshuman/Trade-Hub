@@ -163,7 +163,6 @@ class StaffClaimView(discord.ui.View):
 
     @discord.ui.button(label="Claim Ticket", style=discord.ButtonStyle.green, custom_id="ai_staff_claim")
     async def claim(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # FIX: Force explicit PermissionOverwrite to ensure they can type
         overwrite = discord.PermissionOverwrite(view_channel=True, send_messages=True)
         await interaction.channel.set_permissions(interaction.user, overwrite=overwrite)
         
@@ -172,6 +171,38 @@ class StaffClaimView(discord.ui.View):
         button.label = f"Claimed by {interaction.user.name}"
         button.style = discord.ButtonStyle.gray
         await interaction.message.edit(view=self)
+
+class TradePollView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.votes = {}
+
+    async def check_votes(self, interaction):
+        if len(self.votes) < 2: return 
+        
+        if all(self.votes.values()):
+            await interaction.channel.send("✅ **Both Users Accepted!** Waiting for Middleman...")
+        elif not any(self.votes.values()):
+            await interaction.channel.send("❌ **Both Declined.** Closing ticket...")
+            await asyncio.sleep(3)
+            # Find staff channel to close properly
+            staff_chan_id = reverse_relay_map.get(interaction.channel.id)
+            staff_chan = interaction.guild.get_channel(staff_chan_id) if staff_chan_id else None
+            await close_ticket_logic(staff_chan, interaction.channel.id)
+        else:
+            await interaction.channel.send("⚠️ **Disagreement.** Please discuss the trade terms.")
+
+    @discord.ui.button(label="Accept Trade", style=discord.ButtonStyle.green)
+    async def accept(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.votes[interaction.user.id] = True
+        await interaction.response.send_message(f"{interaction.user.mention} Accepted.", ephemeral=False)
+        await self.check_votes(interaction)
+
+    @discord.ui.button(label="Decline Trade", style=discord.ButtonStyle.red)
+    async def decline(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.votes[interaction.user.id] = False
+        await interaction.response.send_message(f"{interaction.user.mention} Declined.", ephemeral=False)
+        await self.check_votes(interaction)
 
 class ChoiceView(discord.ui.View):
     def __init__(self, owner_id):
@@ -208,7 +239,7 @@ class ChoiceView(discord.ui.View):
 
 class AIModal(discord.ui.Modal, title="Trade Details"):
     trade_info = discord.ui.TextInput(label="What is the trade?", style=discord.TextStyle.paragraph)
-    other_user = discord.ui.TextInput(label="Trading with (Username)", placeholder="username")
+    other_user = discord.ui.TextInput(label="Trading with (Username or @)", placeholder="username")
 
     def __init__(self, owner_id):
         super().__init__()
@@ -218,11 +249,34 @@ class AIModal(discord.ui.Modal, title="Trade Details"):
         await interaction.response.defer(ephemeral=True)
         guild = interaction.guild
         
+        # 1. FIND PARTNER (Auto-Add)
+        target_name = self.other_user.value.strip()
+        target_member = None
+        
+        # Try mention first <@123>
+        if target_name.startswith("<@") and target_name.endswith(">"):
+            try:
+                uid = int(target_name.strip("<@!>"))
+                target_member = guild.get_member(uid)
+            except: pass
+        
+        # Try name search
+        if not target_member:
+            target_member = discord.utils.get(guild.members, name=target_name)
+            
+        # Add to channel if found
+        add_status = ""
+        if target_member:
+            await interaction.channel.set_permissions(target_member, view_channel=True, send_messages=True)
+            add_status = f"\n✅ **Added:** {target_member.mention}"
+        else:
+            add_status = f"\n⚠️ **Note:** Could not auto-add '{target_name}'. Staff can add them manually."
+
+        # 2. CREATE STAFF CHANNEL
         cat = guild.get_channel(AI_CATEGORY_ID)
         if cat: await cat.edit(overwrites={guild.default_role: discord.PermissionOverwrite(view_channel=True)})
         
         c_name = f"ai-{interaction.user.name}-{random.randint(1000,9999)}"
-        # STAFF CAN VIEW BUT NOT TYPE
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
             guild.get_role(OWNER_ROLE_ID): discord.PermissionOverwrite(view_channel=True, send_messages=True)
@@ -235,13 +289,14 @@ class AIModal(discord.ui.Modal, title="Trade Details"):
         relay_map[staff_chan.id] = interaction.channel.id
         reverse_relay_map[interaction.channel.id] = staff_chan.id
         
+        # 3. NOTIFY STAFF
         view = StaffClaimView()
-        # FIX: Added <@&{MIDDLEMAN_ROLE_ID}> to ping the role
         await staff_chan.send(f"<@&{MIDDLEMAN_ROLE_ID}>\n**New AI Ticket**\n**User:** {interaction.user.mention}\n**Trade:** {self.trade_info.value}\n**Partner:** {self.other_user.value}\n**Link:** {interaction.channel.mention}", view=view)
 
-        embed = discord.Embed(title="Trade Assistant", description="An AI agent has joined the chat.", color=discord.Color.blue())
-        await interaction.channel.send(embed=embed)
-        await interaction.followup.send("AI Connected!", ephemeral=True)
+        # 4. SEND POLL TO USER
+        embed = discord.Embed(title="Trade Confirmation", description=f"**Trade:** {self.trade_info.value}\n**Participants:** {interaction.user.mention} & {self.other_user.value}{add_status}\n\nPlease both accept the trade terms below.", color=discord.Color.blue())
+        await interaction.channel.send(embed=embed, view=TradePollView())
+        await interaction.followup.send("AI Connected & Poll Sent!", ephemeral=True)
 
 # --- EVENTS ---
 
@@ -276,22 +331,17 @@ async def on_message(message):
 
         content = message.content
         
-        # !close
         if content.startswith("!close"):
             await message.channel.send("Generating transcript & closing...")
             await close_ticket_logic(message.channel, user_chan_id, closer_id=message.author.id)
             return
 
-        # !transfer
         elif content.startswith("!transfer"):
-            # FIX: Handle mentions properly
             target = message.mentions[0] if message.mentions else None
             if not target:
-                # Fallback to name search if mention failed
                 try:
                     parts = content.split(" ", 1)
-                    if len(parts) > 1:
-                        target = discord.utils.get(message.guild.members, name=parts[1])
+                    if len(parts) > 1: target = discord.utils.get(message.guild.members, name=parts[1])
                 except: pass
 
             if target:
@@ -299,10 +349,29 @@ async def on_message(message):
                 await message.channel.set_permissions(target, view_channel=True, send_messages=True)
                 await message.channel.send(f"✅ Ticket transferred to {target.mention}.")
             else:
-                await message.channel.send(f"❌ User not found. Use `!transfer @User`")
+                await message.channel.send(f"❌ User not found.")
             return
 
-        # !verify
+        # NEW: !add command (Manual add)
+        elif content.startswith("!add"):
+            # Check for mention
+            target = message.mentions[0] if message.mentions else None
+            # If no mention, check text
+            if not target:
+                try:
+                    parts = content.split(" ", 1)
+                    if len(parts) > 1:
+                        raw_name = parts[1].strip()
+                        target = discord.utils.get(message.guild.members, name=raw_name)
+                except: pass
+            
+            if target:
+                await user_chan.set_permissions(target, view_channel=True, send_messages=True)
+                await message.channel.send(f"✅ Added {target.mention} to the ticket.")
+            else:
+                await message.channel.send("❌ User not found. Try tagging them or typing the exact username.")
+            return
+
         elif content.startswith("!verify"):
             target = message.mentions[0] if message.mentions else None
             if target:
@@ -319,7 +388,6 @@ async def on_message(message):
                 await message.channel.send("❌ Usage: `!verify @User`")
             return
 
-        # !middleman2
         elif content.startswith("!middleman2"):
             if os.path.exists("assets/middleman_info.jpg"):
                 await user_chan.send(file=discord.File("assets/middleman_info.jpg"))
@@ -327,7 +395,6 @@ async def on_message(message):
             else: await message.channel.send("❌ Image not found.")
             return
 
-        # !middleman
         elif content.startswith("!middleman"):
             if os.path.exists("assets/middleman_process.webp"):
                 await user_chan.send(file=discord.File("assets/middleman_process.webp"))
