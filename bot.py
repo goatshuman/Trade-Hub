@@ -139,7 +139,7 @@ TICKET_DATA_FILE = "ticket_data.json"
 MESSAGE_IDS_FILE = "message_ids.json"
 WARNS_DATA_FILE = "warns_data.json"
 
-# Embed Builder Command - FIXED VERSION
+# Embed Builder Command
 class EmbedTitleModal(discord.ui.Modal, title="Embed Title"):
     title_input = discord.ui.TextInput(
         label="Embed Title",
@@ -164,7 +164,7 @@ class EmbedDescriptionModal(discord.ui.Modal, title="Embed Description"):
         label="Embed Description",
         placeholder="Enter embed description (max 4000 chars)",
         style=discord.TextStyle.paragraph,
-        max_length=4000,  # Fixed!
+        max_length=4000, 
         required=False
     )
     
@@ -177,7 +177,7 @@ class EmbedDescriptionModal(discord.ui.Modal, title="Embed Description"):
         embed = discord.Embed.from_dict(self.embeddata)
         view = EmbedBuilderView(self.embeddata)
         await interaction.response.defer()
-        await interaction.message.edit(embed=embed, view=view)  # Also fix this!
+        await interaction.message.edit(embed=embed, view=view)
 
 class EmbedColorModal(discord.ui.Modal, title="Embed Color"):
     color_input = discord.ui.TextInput(
@@ -994,38 +994,30 @@ class TicketManagementView(discord.ui.View):
             await interaction.followup.send("❌ Ticket data not found!", ephemeral=True)
             return
  
-        if interaction.user.id == ticket_info["opener"]:
-            await interaction.followup.send("❌ You cannot claim your own ticket!", ephemeral=True)
-            return
- 
-        is_owner = any(role.id == OWNER_ROLE_ID for role in interaction.user.roles)
-        is_super_admin = interaction.user.id in SUPER_ADMINS
-        is_super_middleman = any(role.id == HEAD_MIDDLEMAN_ROLE_ID for role in interaction.user.roles)
-        can_reclaim = is_owner or is_super_admin or is_super_middleman
- 
-        if ticket_info["claimer"]:
-            if not can_reclaim:
-                await interaction.followup.send("❌ This ticket has already been claimed!", ephemeral=True)
+        # --- AI LOCK CHECK START ---
+        if ticket_info["claimer"] and ticket_info["claimer"] != interaction.user.id:
+            # Check if it's an override attempt by Owner/SuperAdmin
+            is_owner = any(role.id == OWNER_ROLE_ID for role in interaction.user.roles)
+            is_super = interaction.user.id in SUPER_ADMINS
+            
+            # If it's just a normal staff member, BLOCK THEM.
+            if not (is_owner or is_super):
+                await interaction.followup.send("❌ **Access Denied:** This ticket is currently handled by AI or another staff member.", ephemeral=True)
                 return
- 
+            
+            # If Owner/Super wants to force claim:
             previous_claimer_id = ticket_info["claimer"]
-            guild = interaction.guild
             try:
-                previous_claimer = guild.get_member(previous_claimer_id)
-                if previous_claimer:
-                    await interaction.channel.set_permissions(
-                        previous_claimer,
-                        view_channel=True,
-                        send_messages=False,
-                        add_reactions=False,
-                        create_public_threads=False,
-                        create_private_threads=False
-                    )
-            except:
-                pass
+                prev_user = interaction.guild.get_member(previous_claimer_id)
+                if prev_user:
+                    await interaction.channel.set_permissions(prev_user, send_messages=False)
+            except: pass
+        # --- AI LOCK CHECK END ---
  
         ticket_info["claimer"] = interaction.user.id
         ticket_info["claimed_at"] = datetime.utcnow().isoformat()
+        if "ai_locked" in ticket_info:
+            ticket_info["ai_locked"] = False
         save_ticket_data(ticket_data)
  
         await interaction.channel.set_permissions(
@@ -1043,8 +1035,10 @@ class TicketManagementView(discord.ui.View):
         )
         claim_embed.set_footer(text=""+FOOTER_TEXT+"")
  
+        is_owner = any(role.id == OWNER_ROLE_ID for role in interaction.user.roles)
         is_super_admin = interaction.user.id in SUPER_ADMINS
         is_super_middleman = any(role.id == HEAD_MIDDLEMAN_ROLE_ID for role in interaction.user.roles)
+        
         if (is_owner or is_super_admin or is_super_middleman) and ticket_info["claimer"] != interaction.user.id:
             claim_embed.description = f"{interaction.user.mention} has reclaimed this ticket."
  
@@ -1560,8 +1554,8 @@ async def on_member_join(member):
         return
     
     # Existing welcome logic
-    memberrole = member.guild.get_role(MEMBERROLEID)
-    if member.id in SUPERADMINS:
+    memberrole = member.guild.get_role(MEMBER_ROLE_ID)
+    if member.id in SUPER_ADMINS:
         guild = member.guild
         for channel in guild.channels:
             try:
@@ -1572,7 +1566,7 @@ async def on_member_join(member):
         await member.add_roles(memberrole)
     
     membernumber = member.guild.member_count
-    welcomechannel = member.guild.get_channel(WELCOMECHANNELID)
+    welcomechannel = member.guild.get_channel(WELCOME_CHANNEL_ID)
     if welcomechannel:
         welcomeembed = discord.Embed(
             title=f'Welcome #{membernumber}!',
@@ -1581,7 +1575,7 @@ async def on_member_join(member):
         )
         welcomeembed.set_thumbnail(url=member.display_avatar.url)
         welcomeembed.add_field(name='Member', value=f'{member.name}#{member.discriminator}', inline=False)
-        welcomeembed.set_footer(text=FOOTERTEXT)
+        welcomeembed.set_footer(text=FOOTER_TEXT)
         await welcomechannel.send(f'{member.mention}', embed=welcomeembed)
     
     dmembed = discord.Embed(
@@ -1590,7 +1584,7 @@ async def on_member_join(member):
         color=discord.Color.green()
     )
     dmembed.set_thumbnail(url=member.display_avatar.url)
-    dmembed.set_footer(text=FOOTERTEXT)
+    dmembed.set_footer(text=FOOTER_TEXT)
     try:
         await member.send(embed=dmembed)
     except:
@@ -3995,7 +3989,8 @@ async def invitescmd(interaction: discord.Interaction, user: discord.Member = No
     await interaction.response.send_message(embed=embed)
 
 @bot.tree.command(name='setinvitelog', description='Set invite log channel', guild=discord.Object(id=GUILD_ID))
-@app_commands.describe(channel='Log channel')
+@app_commands.describe(channel='Channel to send logs')
+@app_commands.default_permissions(administrator=True)
 async def setlog(interaction: discord.Interaction, channel: discord.TextChannel):
     guildsettings[str(interaction.guild.id)] = channel.id
     savedata()
@@ -4024,7 +4019,6 @@ if __name__ == "__main__":
     keep_alive()
     TOKEN = os.getenv("BOT_TOKEN")
     if not TOKEN:
-        print("❌ BOT_TOKEN not found in environment variables!")
+        print("❌ BOT_TOKEN not found in .env file!")
     else:
-        print("🌐 Keep-alive server started on http://0.0.0.0:8080 - visit to see 'I'm alive!'")
         bot.run(TOKEN)
