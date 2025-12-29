@@ -583,6 +583,16 @@ class SupportTicketView(discord.ui.View):
  
     @discord.ui.button(label="Make Support", style=discord.ButtonStyle.success, custom_id="support_ticket_button")
     async def make_support(self, interaction: discord.Interaction, button: discord.ui.Button):
+
+# ONLY OWNER or SUPER ADMINS may open tickets
+try:
+    user_roles = [r.id for r in interaction.user.roles]
+except:
+    user_roles = []
+if not (OWNER_ROLE_ID in user_roles or interaction.user.id in SUPER_ADMINS):
+    await interaction.response.send_message("❌ Only Owner or Super Admins can open tickets.", ephemeral=True)
+    return
+
         ticket_data = load_ticket_data()
         user_id = str(interaction.user.id)
  
@@ -622,7 +632,7 @@ class SupportTicketView(discord.ui.View):
                     interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True, add_reactions=True, create_public_threads=False, create_private_threads=False)
                 }
  
-                admin_full_access_roles = [OWNER_ROLE_ID]  # only owner allowed to type at creation; others require claim
+                admin_full_access_roles = [OWNER_ROLE_ID]  # only owner allowed to send by default; others require claim
                 support_roles = [SUPPORT_ROLE_ID]
  
                 for role_id in STAFF_ROLE_IDS + support_roles:
@@ -631,7 +641,7 @@ class SupportTicketView(discord.ui.View):
                         if role_id in admin_full_access_roles:
                             overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, add_reactions=True, create_public_threads=False, create_private_threads=False)
                         else:
-                            # For support tickets allow middleman+ staff to type before claim
+                            # For support tickets: allow middleman & above to type before claim
                             overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, add_reactions=True, create_public_threads=False, create_private_threads=False)
  
                 ticket_channel = await category.create_text_channel(name=channel_name, overwrites=overwrites)
@@ -665,6 +675,16 @@ class BuyRanksTicketView(discord.ui.View):
  
     @discord.ui.button(label="Buy Ranks", style=discord.ButtonStyle.blurple, custom_id="buyranks_ticket_button")
     async def make_buyranks_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+
+# ONLY OWNER or SUPER ADMINS may open tickets
+try:
+    user_roles = [r.id for r in interaction.user.roles]
+except:
+    user_roles = []
+if not (OWNER_ROLE_ID in user_roles or interaction.user.id in SUPER_ADMINS):
+    await interaction.response.send_message("❌ Only Owner or Super Admins can open tickets.", ephemeral=True)
+    return
+
         await interaction.response.defer()
         ticket_data = load_ticket_data()
         user_id = str(interaction.user.id)
@@ -740,6 +760,16 @@ class BuyItemsTicketView(discord.ui.View):
  
     @discord.ui.button(label="Buy Items", style=discord.ButtonStyle.blurple, custom_id="buyitems_ticket_button")
     async def make_buyitems_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+
+# ONLY OWNER or SUPER ADMINS may open tickets
+try:
+    user_roles = [r.id for r in interaction.user.roles]
+except:
+    user_roles = []
+if not (OWNER_ROLE_ID in user_roles or interaction.user.id in SUPER_ADMINS):
+    await interaction.response.send_message("❌ Only Owner or Super Admins can open tickets.", ephemeral=True)
+    return
+
         await interaction.response.defer()
         ticket_data = load_ticket_data()
         user_id = str(interaction.user.id)
@@ -812,6 +842,16 @@ class BuyPersonalMiddlemanView(discord.ui.View):
  
     @discord.ui.button(label="Buy Personal Middleman", style=discord.ButtonStyle.blurple, custom_id="buy_personal_middleman_button")
     async def buy_personal_middleman(self, interaction: discord.Interaction, button: discord.ui.Button):
+
+# ONLY OWNER or SUPER ADMINS may open tickets
+try:
+    user_roles = [r.id for r in interaction.user.roles]
+except:
+    user_roles = []
+if not (OWNER_ROLE_ID in user_roles or interaction.user.id in SUPER_ADMINS):
+    await interaction.response.send_message("❌ Only Owner or Super Admins can open tickets.", ephemeral=True)
+    return
+
         await interaction.response.defer()
         owner_roles = [role.id for role in interaction.user.roles]
         if OWNER_ROLE_ID not in owner_roles:
@@ -892,6 +932,16 @@ class RequestMiddlemanView(discord.ui.View):
  
     @discord.ui.button(label="Request Middleman", style=discord.ButtonStyle.primary, custom_id="request_middleman_button")
     async def request_middleman(self, interaction: discord.Interaction, button: discord.ui.Button):
+
+# ONLY OWNER or SUPER ADMINS may open tickets
+try:
+    user_roles = [r.id for r in interaction.user.roles]
+except:
+    user_roles = []
+if not (OWNER_ROLE_ID in user_roles or interaction.user.id in SUPER_ADMINS):
+    await interaction.response.send_message("❌ Only Owner or Super Admins can open tickets.", ephemeral=True)
+    return
+
         ticket_data = load_ticket_data()
         user_id = str(interaction.user.id)
  
@@ -931,7 +981,7 @@ class RequestMiddlemanView(discord.ui.View):
                     interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True, add_reactions=True, create_public_threads=False, create_private_threads=False)
                 }
  
-                admin_full_access_roles = [OWNER_ROLE_ID]  # only owner allowed to type at creation; others require claim
+                admin_full_access_roles = [OWNER_ROLE_ID]  # only owner allowed to send by default; others require claim
  
                 for role_id in STAFF_ROLE_IDS:
                     role = guild.get_role(role_id)
@@ -977,6 +1027,26 @@ class TicketManagementView(discord.ui.View):
             return
  
         await interaction.response.defer()
+
+# Prevent opener from claiming their own ticket
+try:
+    # ticket_info is looked up later; we perform a quick lookup here
+    ticket_data_quick = load_ticket_data()
+    found_info = None
+    for ttype in ["user_middleman_tickets","user_support_tickets","user_buyranks_tickets","user_buyitems_tickets","user_personal_middleman_tickets"]:
+        for uid, data in ticket_data_quick.get(ttype, {}).items():
+            if data.get("channel_id") == interaction.channel.id:
+                found_info = data
+                break
+        if found_info:
+            break
+    if found_info and found_info.get('opener') == interaction.user.id:
+        await interaction.followup.send("❌ You cannot claim your own ticket.", ephemeral=True)
+        return
+except Exception:
+    pass
+
+
  
         ticket_data = load_ticket_data()
         ticket_info = None
@@ -1031,7 +1101,8 @@ class TicketManagementView(discord.ui.View):
         )
  
         
-# Also allow owner/admin/co-owner roles to message once claimer set (so admins can assist)
+
+# Also allow owner/co-owner/administrator roles to message (assist) once someone claims
 for role_id in [OWNER_ROLE_ID, CO_OWNER_ROLE_ID, ADMINISTRATOR_ROLE_ID]:
     role_obj = interaction.guild.get_role(role_id)
     if role_obj:
@@ -1039,6 +1110,7 @@ for role_id in [OWNER_ROLE_ID, CO_OWNER_ROLE_ID, ADMINISTRATOR_ROLE_ID]:
             await interaction.channel.set_permissions(role_obj, view_channel=True, send_messages=True, add_reactions=True, create_public_threads=False, create_private_threads=False)
         except Exception:
             pass
+
 claim_embed = discord.Embed(
             description=f"{interaction.user.mention} will be your middleman for today.",
             color=discord.Color.green()
@@ -1058,26 +1130,30 @@ claim_embed = discord.Embed(
     async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
         
 # PERMISSION CHECK: only opener, current claimer, added users, transferred-to claimer, owner, or super-admins can close
-ticket_data = load_ticket_data()
-ticket_info = None
-for ttype in ["user_middleman_tickets","user_support_tickets","user_buyranks_tickets","user_buyitems_tickets","user_personal_middleman_tickets"]:
-    for uid, data in ticket_data.get(ttype, {}).items():
-        if data.get("channel_id") == interaction.channel.id:
-            ticket_info = data
+try:
+    ticket_data_chk = load_ticket_data()
+    ticket_info_chk = None
+    for ttype in ["user_middleman_tickets","user_support_tickets","user_buyranks_tickets","user_buyitems_tickets","user_personal_middleman_tickets"]:
+        for uid, data in ticket_data_chk.get(ttype, {}).items():
+            if data.get("channel_id") == interaction.channel.id:
+                ticket_info_chk = data
+                break
+        if ticket_info_chk:
             break
-    if ticket_info:
-        break
 
-allowed_ids = []
-if ticket_info:
-    allowed_ids = [ticket_info.get('opener'), ticket_info.get('claimer')] + ticket_info.get('added_users', [])
+    allowed_ids_chk = []
+    if ticket_info_chk:
+        allowed_ids_chk = [ticket_info_chk.get('opener'), ticket_info_chk.get('claimer')] + ticket_info_chk.get('added_users', [])
 
-owner_role_ids = [OWNER_ROLE_ID, CO_OWNER_ROLE_ID]
-is_owner_role = any(role.id in owner_role_ids for role in interaction.user.roles)
-is_super_admin = interaction.user.id in SUPER_ADMINS
+    owner_role_ids_chk = [OWNER_ROLE_ID, CO_OWNER_ROLE_ID]
+    is_owner_role_chk = any(role.id in owner_role_ids_chk for role in interaction.user.roles)
+    is_super_admin_chk = interaction.user.id in SUPER_ADMINS
 
-if not (interaction.user.id in allowed_ids or is_owner_role or is_super_admin):
-    return await interaction.response.send_message('❌ You are not allowed to close this ticket.', ephemeral=True)
+    if not (interaction.user.id in allowed_ids_chk or is_owner_role_chk or is_super_admin_chk):
+        await interaction.response.send_message('❌ You are not allowed to close this ticket.', ephemeral=True)
+        return
+except Exception:
+    pass
 
 await interaction.response.send_message("✅ Ticket closed!", ephemeral=True)
  
@@ -4063,35 +4139,36 @@ async def unclaim(ctx):
     # Only usable in support ticket channels
     try:
         if ctx.channel.category_id != SUPPORT_CATEGORY_ID:
-            return await ctx.send("❌ This command only works in support tickets.")
-    except:
-        pass
+            await ctx.send("❌ This command only works in support tickets.")
+            return
+    except Exception:
+        await ctx.send("❌ Unable to verify channel category.")
+        return
 
     # Only middleman and above roles can unclaim
     user_roles = [r.id for r in ctx.author.roles]
     if not any(rid in STAFF_ROLE_IDS for rid in user_roles):
-        return await ctx.send("❌ Only middleman & above can unclaim.")
+        await ctx.send("❌ Only middleman & above can unclaim.")
+        return
 
     data = load_ticket_data()
-    found = False
-    for uid, info in data.get('user_support_tickets', {}).items():
+    for uid, info in list(data.get('user_support_tickets', {}).items()):
         if info.get('channel_id') == ctx.channel.id:
-            found = True
             # opener cannot unclaim their own ticket
             if info.get('opener') == ctx.author.id:
-                return await ctx.send('❌ You cannot unclaim a ticket you opened.')
-            # remove send perms from previous claimer
+                await ctx.send('❌ You cannot unclaim a ticket you opened.')
+                return
             prev_claimer = info.get('claimer')
             info['claimer'] = None
             info['claimed_at'] = None
             save_ticket_data(data)
             try:
                 if prev_claimer:
-                    member_prev = ctx.guild.get_member(prev_claimer)
-                    if member_prev:
-                        await ctx.channel.set_permissions(member_prev, send_messages=False)
-            except:
+                    prev_member = ctx.guild.get_member(prev_claimer)
+                    if prev_member:
+                        await ctx.channel.set_permissions(prev_member, send_messages=False)
+            except Exception:
                 pass
-            return await ctx.send('🔓 Ticket unclaimed.')
-    if not found:
-        await ctx.send('❌ No support ticket found for this channel.')
+            await ctx.send('🔓 Ticket unclaimed.')
+            return
+    await ctx.send('❌ No support ticket found for this channel.')
