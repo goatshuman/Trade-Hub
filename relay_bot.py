@@ -162,39 +162,33 @@ class StaffDashboard(discord.ui.View):
         # 1. Notify User (Main Ticket)
         await self.send_to_user(interaction, "For further assistance, I will now transfer this ticket to our middleman. Thanks for having me! 🫡")
         
-        # 2. Update Database to unlock ticket for Main Bot (so humans can claim)
+        # 2. Notify Staff & Start Timer
+        await interaction.response.send_message("🔒 **Transfer Initiated:** AI Ticket will auto-close in 10 seconds...", ephemeral=False)
+        
+        # 3. Update Database (Unlock ticket)
         data = load_ticket_data()
-        opener_id = "Unknown"
         for uid, t in data.get("user_middleman_tickets", {}).items():
             if t.get("staff_channel_id") == interaction.channel.id:
-                opener_id = t.get("opener", "Unknown")
                 t["ai_locked"] = False
                 t["claimer"] = None 
                 if "staff_channel_id" in t: del t["staff_channel_id"]
                 save_ticket_data(data)
                 break
 
-        # 3. Notify Staff & Generate Transcript
-        await interaction.response.send_message("📝 **Generating Transcript...**", ephemeral=True)
-        await create_transcript(interaction.channel, opener_id, interaction.user.id, interaction.user.id)
-
-        # 4. Timer Message
-        msg = await interaction.channel.send("🔒 **Transfer Initiated. Closing AI Session in 10 seconds...**")
-        
-        # 5. Countdown Loop
+        # 4. Countdown Loop (Visible updates)
+        msg = await interaction.original_response()
         for i in range(9, 0, -1):
             await asyncio.sleep(1)
-            try: await msg.edit(content=f"🔒 **Closing AI Session in {i} seconds...**")
+            try: await msg.edit(content=f"🔒 **Transfer Initiated:** AI Ticket will auto-close in {i} seconds...")
             except: break
         
-        # 6. UNLINK Channels (Critical: Prevents Main Ticket Deletion)
+        # 5. UNLINK Channels (Critical: Prevents Main Ticket Deletion)
         staff_chan_id = interaction.channel.id
         user_chan_id = relay_map.get(staff_chan_id)
-        
         if staff_chan_id in relay_map: del relay_map[staff_chan_id]
         if user_chan_id in reverse_relay_map: del reverse_relay_map[user_chan_id]
         
-        # 7. Delete AI Ticket
+        # 6. Delete AI Ticket
         try: await interaction.channel.delete()
         except: pass
 
@@ -224,7 +218,30 @@ class StaffDashboard(discord.ui.View):
         else:
             await interaction.response.send_message("❌ Image missing.", ephemeral=True)
 
-    @discord.ui.button(label="⛔ Close Ticket", style=discord.ButtonStyle.red, row=1)
+    @discord.ui.button(label="🛑 Close AI", style=discord.ButtonStyle.red, row=1)
+    async def btn_close_ai(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message("🔌 **Disconnecting AI...** (Main Ticket will remain open)", ephemeral=True)
+        await asyncio.sleep(2)
+        
+        # Unlink Logic
+        data = load_ticket_data()
+        for uid, t in data.get("user_middleman_tickets", {}).items():
+            if t.get("staff_channel_id") == interaction.channel.id:
+                t["ai_locked"] = False
+                t["claimer"] = None
+                if "staff_channel_id" in t: del t["staff_channel_id"]
+                save_ticket_data(data)
+                break
+        
+        staff_chan_id = interaction.channel.id
+        user_chan_id = relay_map.get(staff_chan_id)
+        if staff_chan_id in relay_map: del relay_map[staff_chan_id]
+        if user_chan_id in reverse_relay_map: del reverse_relay_map[user_chan_id]
+        
+        try: await interaction.channel.delete()
+        except: pass
+
+    @discord.ui.button(label="⛔ Close Ticket", style=discord.ButtonStyle.red, row=2)
     async def btn_close(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_message("🔒 Closing ticket sequence initiated...", ephemeral=True)
         await close_ticket_logic(interaction.channel, self.user_chan_id, closer_id=interaction.user.id)
@@ -269,8 +286,9 @@ class StaffClaimView(discord.ui.View):
             embed.add_field(name="❓ Process", value="Ask MM Knowledge", inline=True)
             embed.add_field(name="🔄 Transfer", value="**End Session (10s Timer)**", inline=True)
             embed.add_field(name="🖼️ MM / MM2", value="Send Diagrams", inline=True)
-            embed.add_field(name="⛔ Close", value="Delete Ticket & Log", inline=True)
-            embed.add_field(name="⚠️ Need to Transfer Ownership?", value="To fully transfer the ticket to another staff member (give them write access), use:\n**`!transfer @User`**", inline=False)
+            embed.add_field(name="🛑 Close AI", value="Disconnect AI ONLY", inline=True)
+            embed.add_field(name="⛔ Close Ticket", value="Delete Entire Ticket & Log", inline=True)
+            embed.add_field(name="⚠️ Need to Transfer Ownership?", value="To fully transfer the ticket to another staff member (give them write access), use:\n**`!addai @User`**", inline=False)
             
             await interaction.channel.send(embed=embed, view=dashboard)
 
@@ -515,11 +533,13 @@ async def on_message(message):
                 await message.channel.send(f"✅ Ticket transferred to {target.mention}.")
             else: await message.channel.send("❌ Use `!transfer @User`")
             return
-        elif content.startswith("!aiadd"):
+        elif content.startswith("!aiadd") or content.startswith("!addai"):
             try:
+                # Add the staff member to the main ticket
                 await user_chan.set_permissions(message.author, view_channel=True, send_messages=True)
-                await message.channel.send(f"✅ Added to {user_chan.mention}")
-            except: pass
+                await message.channel.send(f"✅ You have been added to the main ticket: {user_chan.mention}")
+            except Exception as e:
+                await message.channel.send(f"❌ Failed: {e}")
             return
         elif content.startswith("!add"):
             target = message.mentions[0] if message.mentions else None
