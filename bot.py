@@ -101,9 +101,9 @@ BUY_ITEMS_CHANNEL_ID = 1440345093977411645
 BUY_PERSONAL_MIDDLEMAN_CHANNEL_ID = 1439932899406254100
 GAMES_CHANNEL_ID = 1451911322563252379
 TRANSCRIPT_CHANNEL_ID = 1439211113420951643
-MIDDLEMAN_CATEGORY_ID = 1438898941063205034
+MIDDLEMAN_CATEGORY_ID = 1455128597927821313
 PERSONAL_MIDDLEMAN_CATEGORY_ID = 1438902367280955444
-SUPPORT_CATEGORY_ID = 1438899881719631983
+SUPPORT_CATEGORY_ID = 1455128452427677840
 BUY_RANKS_CATEGORY_ID = 1438901628773208215
 BUY_ITEMS_CATEGORY_ID = 1440344945553834117
 UNIFIED_TICKET_CATEGORY_ID = 1444708699313668096
@@ -631,7 +631,7 @@ class SupportTicketView(discord.ui.View):
                         if role_id in admin_full_access_roles:
                             overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, add_reactions=True, create_public_threads=False, create_private_threads=False)
                         else:
-                            overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=False, add_reactions=False, create_public_threads=False, create_private_threads=False)
+                            overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, add_reactions=False, create_public_threads=False, create_private_threads=False)
  
                 ticket_channel = await category.create_text_channel(name=channel_name, overwrites=overwrites)
  
@@ -938,7 +938,7 @@ class RequestMiddlemanView(discord.ui.View):
                         if role_id in admin_full_access_roles:
                             overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, add_reactions=True, create_public_threads=False, create_private_threads=False)
                         else:
-                            overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=False, add_reactions=False, create_public_threads=False, create_private_threads=False)
+                            overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, add_reactions=False, create_public_threads=False, create_private_threads=False)
  
                 ticket_channel = await category.create_text_channel(name=channel_name, overwrites=overwrites)
  
@@ -1010,10 +1010,14 @@ class TicketManagementView(discord.ui.View):
             try:
                 prev_user = interaction.guild.get_member(previous_claimer_id)
                 if prev_user:
-                    await interaction.channel.set_permissions(prev_user, send_messages=False)
+                    await interaction.channel.set_permissions(prev_user, send_messages=True)
             except: pass
         # --- AI LOCK CHECK END ---
  
+        # block self-claim
+        if ticket_info.get("opener") == interaction.user.id:
+            await interaction.followup.send("❌ You cannot claim your own ticket.", ephemeral=True)
+            return
         ticket_info["claimer"] = interaction.user.id
         ticket_info["claimed_at"] = datetime.utcnow().isoformat()
         if "ai_locked" in ticket_info:
@@ -4022,3 +4026,21 @@ if __name__ == "__main__":
         print("❌ BOT_TOKEN not found in .env file!")
     else:
         bot.run(TOKEN)
+
+
+@bot.command()
+async def unclaim(ctx):
+    user_roles=[r.id for r in ctx.author.roles]
+    if MIDDLEMAN_ROLE_ID not in user_roles and not any(r in STAFF_ROLE_IDS for r in user_roles):
+        return await ctx.send("❌ Only middleman & above can unclaim.")
+    data=load_ticket_data()
+    for tgrp in data:
+        if isinstance(data[tgrp], dict):
+            for uid, info in data[tgrp].items():
+                if info.get("channel_id")==ctx.channel.id:
+                    if info.get("opener")==ctx.author.id:
+                        return await ctx.send("❌ You cannot unclaim your own ticket.")
+                    info["claimer"]=None
+                    save_ticket_data(data)
+                    return await ctx.send("🔓 Ticket unclaimed.")
+    await ctx.send("❌ Not a ticket channel.")
