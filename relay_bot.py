@@ -101,29 +101,21 @@ async def close_ticket_logic(staff_channel, user_channel_id, closer_id=None):
         try: await staff_channel.delete()
         except: pass
 
-async def update_timer(view, channel, timer_msg_id):
-    for remaining in range(60, -1, -1):
-        if view.user_responded: return
-        try:
-            timer_msg = await channel.fetch_message(timer_msg_id)
-            embed = discord.Embed(title="⏱️ Verification Timer", description=f"**Time Remaining: {remaining} seconds**", color=discord.Color.blue())
-            await timer_msg.edit(embed=embed)
-        except: break
-        if remaining > 0: await asyncio.sleep(1)
-    
-    if not view.user_responded:
-        view.is_timed_out = True
-        try:
-            timer_msg = await channel.fetch_message(timer_msg_id)
-            await timer_msg.delete()
-        except: pass
-
 # --- VIEWS ---
 
 class StaffDashboard(discord.ui.View):
-    def __init__(self, user_chan_id):
+    def __init__(self, user_chan_id, claimer_id):
         super().__init__(timeout=None)
         self.user_chan_id = user_chan_id
+        self.claimer_id = claimer_id
+
+    # SECURITY CHECK: Only allow the claimer (or Owner) to click buttons
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        is_owner = any(role.id == OWNER_ROLE_ID for role in interaction.user.roles)
+        if interaction.user.id != self.claimer_id and not is_owner:
+            await interaction.response.send_message("❌ **Access Denied:** Only the claimer can control this session.", ephemeral=True)
+            return False
+        return True
 
     async def send_to_user(self, interaction, text=None, embed=None, file=None):
         user_chan = bot.get_channel(self.user_chan_id)
@@ -160,7 +152,6 @@ class StaffDashboard(discord.ui.View):
     @discord.ui.button(label="Middleman", style=discord.ButtonStyle.gray, row=1)
     async def btn_mm1(self, interaction: discord.Interaction, button: discord.ui.Button):
         if os.path.exists("assets/middleman_process.webp"):
-            # TEXT + IMAGE IN ONE EMBED
             embed = discord.Embed(
                 description="**The middleman is the trusted person between traders.**\n\n・**Step 1:** Both parties give items to MM.\n・**Step 2:** MM verifies items.\n・**Step 3:** MM swaps items to respective parties.",
                 color=EMBED_COLOR
@@ -174,7 +165,11 @@ class StaffDashboard(discord.ui.View):
     @discord.ui.button(label="Middleman 2", style=discord.ButtonStyle.gray, row=1)
     async def btn_mm2(self, interaction: discord.Interaction, button: discord.ui.Button):
         if os.path.exists("assets/middleman_info.jpg"):
-            embed = discord.Embed(description="**Middleman Information**", color=EMBED_COLOR)
+            # SAME TEXT AS REQUESTED FOR BOTH DIAGRAMS
+            embed = discord.Embed(
+                description="**The middleman is the trusted person between traders.**\n\n・**Step 1:** Both parties give items to MM.\n・**Step 2:** MM verifies items.\n・**Step 3:** MM swaps items to respective parties.",
+                color=EMBED_COLOR
+            )
             file = discord.File("assets/middleman_info.jpg", filename="mm_info.jpg")
             embed.set_image(url="attachment://mm_info.jpg")
             await self.send_to_user(interaction, embed=embed, file=file)
@@ -217,7 +212,8 @@ class StaffClaimView(discord.ui.View):
 
         if interaction.channel.id in relay_map:
             user_chan_id = relay_map[interaction.channel.id]
-            dashboard = StaffDashboard(user_chan_id)
+            # PASS CLAIMER ID to Dashboard for Security Check
+            dashboard = StaffDashboard(user_chan_id, claimer_id=interaction.user.id)
             
             embed = discord.Embed(title="🎛️ Staff Control Panel", description="Use the buttons below to interact with the user.", color=discord.Color.dark_theme())
             embed.add_field(name="👋 Intro", value="Send Welcome Message", inline=True)
@@ -234,7 +230,7 @@ class TradePollView(discord.ui.View):
     def __init__(self, allowed_users):
         super().__init__(timeout=None)
         self.votes = {}
-        self.allowed_users = allowed_users # List of user IDs
+        self.allowed_users = allowed_users
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id not in self.allowed_users:
@@ -253,7 +249,6 @@ class TradePollView(discord.ui.View):
             # BOTH DECLINED
             await interaction.channel.send(f"🚫 **Trade Declined.**\nYou both declined the trade. I am now closing the ticket.\nFeel free to request a middleman anytime you want here: <#{REQUEST_CHANNEL_ID}>")
             await asyncio.sleep(4)
-            # Find staff channel to close properly
             staff_chan_id = reverse_relay_map.get(interaction.channel.id)
             staff_chan = interaction.guild.get_channel(staff_chan_id) if staff_chan_id else None
             await close_ticket_logic(staff_chan, interaction.channel.id)
@@ -328,7 +323,6 @@ class AIModal(discord.ui.Modal, title="AI Trade Setup"):
         target_member = discord.utils.get(guild.members, name=target_name)
             
         add_status = ""
-        # LIST OF ALLOWED VOTERS
         allowed_voters = [interaction.user.id]
         
         if target_member:
@@ -374,9 +368,8 @@ class AIModal(discord.ui.Modal, title="AI Trade Setup"):
         
         await staff_chan.send(content=f"<@&{MIDDLEMAN_ROLE_ID}>", embed=info_embed, view=view)
 
-        # 4. USER POLL
+        # 4. USER POLL (Command Help Removed)
         user_embed = discord.Embed(title="🤝 Trade Confirmation", description=f"**Trade:** {self.trade_info.value}\n\n**Participants:** {interaction.user.mention} & {target_member.mention if target_member else target_name}\n\n{add_status}\n\n*Please confirm the details above.*", color=EMBED_COLOR)
-        # PASS ALLOWED VOTERS TO VIEW
         await interaction.channel.send(embed=user_embed, view=TradePollView(allowed_voters))
         await interaction.followup.send("AI Assistant Connected!", ephemeral=True)
 
@@ -529,5 +522,7 @@ async def on_message(message):
 # RUN
 if os.getenv("AI_BOT_TOKEN"):
     bot.run(os.getenv("AI_BOT_TOKEN"))
+else:
+    print("❌ AI_BOT_TOKEN missing")
 else:
     print("❌ AI_BOT_TOKEN missing")
