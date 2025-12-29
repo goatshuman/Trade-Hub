@@ -101,9 +101,9 @@ BUY_ITEMS_CHANNEL_ID = 1440345093977411645
 BUY_PERSONAL_MIDDLEMAN_CHANNEL_ID = 1439932899406254100
 GAMES_CHANNEL_ID = 1451911322563252379
 TRANSCRIPT_CHANNEL_ID = 1439211113420951643
-MIDDLEMAN_CATEGORY_ID = 1455128597927821313
+MIDDLEMAN_CATEGORY_ID = 1438898941063205034
 PERSONAL_MIDDLEMAN_CATEGORY_ID = 1438902367280955444
-SUPPORT_CATEGORY_ID = 1455128452427677840
+SUPPORT_CATEGORY_ID = 1438899881719631983
 BUY_RANKS_CATEGORY_ID = 1438901628773208215
 BUY_ITEMS_CATEGORY_ID = 1440344945553834117
 UNIFIED_TICKET_CATEGORY_ID = 1444708699313668096
@@ -154,6 +154,24 @@ class EmbedTitleModal(discord.ui.Modal, title="Embed Title"):
     
     async def on_submit(self, interaction: discord.Interaction):
         self.embed_data['title'] = self.title_input.value
+        
+        # CLOSE PERMISSION GUARD
+        ticket_data = load_ticket_data()
+        ch = ctx.channel.id if hasattr(ctx,'channel') else interaction.channel.id
+        t = None
+        for grp in ticket_data:
+            if isinstance(ticket_data[grp],dict):
+                for uid,inf in ticket_data[grp].items():
+                    if inf.get("channel_id")==ch:
+                        t=inf; break
+        if t:
+            allowed = [t.get("opener"), t.get("claimer")]
+            allowed += t.get("added_users",[])
+            owner_roles=[OWNER_ROLE_ID,CO_OWNER_ROLE_ID]
+            if (interaction.user.id not in allowed) and (not any(r.id in owner_roles for r in interaction.user.roles)):
+                await interaction.response.send_message("❌ You cannot close this ticket.",ephemeral=True)
+                return
+
         await interaction.response.defer()
         embed = discord.Embed.from_dict(self.embed_data)
         view = EmbedBuilderView(self.embed_data)
@@ -176,6 +194,24 @@ class EmbedDescriptionModal(discord.ui.Modal, title="Embed Description"):
         self.embeddata['description'] = self.descinput.value
         embed = discord.Embed.from_dict(self.embeddata)
         view = EmbedBuilderView(self.embeddata)
+        
+        # CLOSE PERMISSION GUARD
+        ticket_data = load_ticket_data()
+        ch = ctx.channel.id if hasattr(ctx,'channel') else interaction.channel.id
+        t = None
+        for grp in ticket_data:
+            if isinstance(ticket_data[grp],dict):
+                for uid,inf in ticket_data[grp].items():
+                    if inf.get("channel_id")==ch:
+                        t=inf; break
+        if t:
+            allowed = [t.get("opener"), t.get("claimer")]
+            allowed += t.get("added_users",[])
+            owner_roles=[OWNER_ROLE_ID,CO_OWNER_ROLE_ID]
+            if (interaction.user.id not in allowed) and (not any(r.id in owner_roles for r in interaction.user.roles)):
+                await interaction.response.send_message("❌ You cannot close this ticket.",ephemeral=True)
+                return
+
         await interaction.response.defer()
         await interaction.message.edit(embed=embed, view=view)
 
@@ -200,6 +236,24 @@ class EmbedColorModal(discord.ui.Modal, title="Embed Color"):
                     self.embed_data['color'] = int(color)
             except:
                 pass
+        
+        # CLOSE PERMISSION GUARD
+        ticket_data = load_ticket_data()
+        ch = ctx.channel.id if hasattr(ctx,'channel') else interaction.channel.id
+        t = None
+        for grp in ticket_data:
+            if isinstance(ticket_data[grp],dict):
+                for uid,inf in ticket_data[grp].items():
+                    if inf.get("channel_id")==ch:
+                        t=inf; break
+        if t:
+            allowed = [t.get("opener"), t.get("claimer")]
+            allowed += t.get("added_users",[])
+            owner_roles=[OWNER_ROLE_ID,CO_OWNER_ROLE_ID]
+            if (interaction.user.id not in allowed) and (not any(r.id in owner_roles for r in interaction.user.roles)):
+                await interaction.response.send_message("❌ You cannot close this ticket.",ephemeral=True)
+                return
+
         await interaction.response.defer()
         embed = discord.Embed.from_dict(self.embed_data)
         view = EmbedBuilderView(self.embed_data)
@@ -619,7 +673,7 @@ class SupportTicketView(discord.ui.View):
  
                 overwrites = {
                     guild.default_role: discord.PermissionOverwrite(view_channel=False),
-                    interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True, add_reactions=True, create_public_threads=False, create_private_threads=False)
+                    interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=False, add_reactions=True, create_public_threads=False, create_private_threads=False)
                 }
  
                 admin_full_access_roles = [OWNER_ROLE_ID, CO_OWNER_ROLE_ID, ADMINISTRATOR_ROLE_ID]
@@ -629,9 +683,9 @@ class SupportTicketView(discord.ui.View):
                     role = guild.get_role(role_id)
                     if role:
                         if role_id in admin_full_access_roles:
-                            overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, add_reactions=True, create_public_threads=False, create_private_threads=False)
+                            overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=False, add_reactions=True, create_public_threads=False, create_private_threads=False)
                         else:
-                            overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, add_reactions=False, create_public_threads=False, create_private_threads=False)
+                            overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=False, add_reactions=False, create_public_threads=False, create_private_threads=False)
  
                 ticket_channel = await category.create_text_channel(name=channel_name, overwrites=overwrites)
  
@@ -664,6 +718,24 @@ class BuyRanksTicketView(discord.ui.View):
  
     @discord.ui.button(label="Buy Ranks", style=discord.ButtonStyle.blurple, custom_id="buyranks_ticket_button")
     async def make_buyranks_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        
+        # CLOSE PERMISSION GUARD
+        ticket_data = load_ticket_data()
+        ch = ctx.channel.id if hasattr(ctx,'channel') else interaction.channel.id
+        t = None
+        for grp in ticket_data:
+            if isinstance(ticket_data[grp],dict):
+                for uid,inf in ticket_data[grp].items():
+                    if inf.get("channel_id")==ch:
+                        t=inf; break
+        if t:
+            allowed = [t.get("opener"), t.get("claimer")]
+            allowed += t.get("added_users",[])
+            owner_roles=[OWNER_ROLE_ID,CO_OWNER_ROLE_ID]
+            if (interaction.user.id not in allowed) and (not any(r.id in owner_roles for r in interaction.user.roles)):
+                await interaction.response.send_message("❌ You cannot close this ticket.",ephemeral=True)
+                return
+
         await interaction.response.defer()
         ticket_data = load_ticket_data()
         user_id = str(interaction.user.id)
@@ -688,7 +760,7 @@ class BuyRanksTicketView(discord.ui.View):
  
             overwrites = {
                 guild.default_role: discord.PermissionOverwrite(view_channel=False),
-                interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True, add_reactions=True, create_public_threads=False, create_private_threads=False)
+                interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=False, add_reactions=True, create_public_threads=False, create_private_threads=False)
             }
  
             buyranks_allowed_roles = [OWNER_ROLE_ID, CO_OWNER_ROLE_ID, ADMINISTRATOR_ROLE_ID, MODERATOR_ROLE_ID, HEAD_MANAGER_ROLE_ID, HEAD_MIDDLEMAN_ROLE_ID, COORDINATOR_ROLE_ID, HEAD_COORDINATOR_ROLE_ID]
@@ -696,7 +768,7 @@ class BuyRanksTicketView(discord.ui.View):
             for role_id in buyranks_allowed_roles:
                 role = guild.get_role(role_id)
                 if role:
-                    overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, add_reactions=True, create_public_threads=False, create_private_threads=False)
+                    overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=False, add_reactions=True, create_public_threads=False, create_private_threads=False)
  
             ticket_channel = await category.create_text_channel(name=channel_name, overwrites=overwrites)
  
@@ -739,6 +811,24 @@ class BuyItemsTicketView(discord.ui.View):
  
     @discord.ui.button(label="Buy Items", style=discord.ButtonStyle.blurple, custom_id="buyitems_ticket_button")
     async def make_buyitems_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        
+        # CLOSE PERMISSION GUARD
+        ticket_data = load_ticket_data()
+        ch = ctx.channel.id if hasattr(ctx,'channel') else interaction.channel.id
+        t = None
+        for grp in ticket_data:
+            if isinstance(ticket_data[grp],dict):
+                for uid,inf in ticket_data[grp].items():
+                    if inf.get("channel_id")==ch:
+                        t=inf; break
+        if t:
+            allowed = [t.get("opener"), t.get("claimer")]
+            allowed += t.get("added_users",[])
+            owner_roles=[OWNER_ROLE_ID,CO_OWNER_ROLE_ID]
+            if (interaction.user.id not in allowed) and (not any(r.id in owner_roles for r in interaction.user.roles)):
+                await interaction.response.send_message("❌ You cannot close this ticket.",ephemeral=True)
+                return
+
         await interaction.response.defer()
         ticket_data = load_ticket_data()
         user_id = str(interaction.user.id)
@@ -763,12 +853,12 @@ class BuyItemsTicketView(discord.ui.View):
  
             overwrites = {
                 guild.default_role: discord.PermissionOverwrite(view_channel=False),
-                interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True, add_reactions=True, create_public_threads=False, create_private_threads=False)
+                interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=False, add_reactions=True, create_public_threads=False, create_private_threads=False)
             }
  
             owner_role = guild.get_role(OWNER_ROLE_ID)
             if owner_role:
-                overwrites[owner_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, add_reactions=True, create_public_threads=False, create_private_threads=False)
+                overwrites[owner_role] = discord.PermissionOverwrite(view_channel=True, send_messages=False, add_reactions=True, create_public_threads=False, create_private_threads=False)
  
             ticket_channel = await category.create_text_channel(name=channel_name, overwrites=overwrites)
  
@@ -811,6 +901,24 @@ class BuyPersonalMiddlemanView(discord.ui.View):
  
     @discord.ui.button(label="Buy Personal Middleman", style=discord.ButtonStyle.blurple, custom_id="buy_personal_middleman_button")
     async def buy_personal_middleman(self, interaction: discord.Interaction, button: discord.ui.Button):
+        
+        # CLOSE PERMISSION GUARD
+        ticket_data = load_ticket_data()
+        ch = ctx.channel.id if hasattr(ctx,'channel') else interaction.channel.id
+        t = None
+        for grp in ticket_data:
+            if isinstance(ticket_data[grp],dict):
+                for uid,inf in ticket_data[grp].items():
+                    if inf.get("channel_id")==ch:
+                        t=inf; break
+        if t:
+            allowed = [t.get("opener"), t.get("claimer")]
+            allowed += t.get("added_users",[])
+            owner_roles=[OWNER_ROLE_ID,CO_OWNER_ROLE_ID]
+            if (interaction.user.id not in allowed) and (not any(r.id in owner_roles for r in interaction.user.roles)):
+                await interaction.response.send_message("❌ You cannot close this ticket.",ephemeral=True)
+                return
+
         await interaction.response.defer()
         owner_roles = [role.id for role in interaction.user.roles]
         if OWNER_ROLE_ID not in owner_roles:
@@ -840,12 +948,12 @@ class BuyPersonalMiddlemanView(discord.ui.View):
  
             overwrites = {
                 guild.default_role: discord.PermissionOverwrite(view_channel=False),
-                interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True, add_reactions=True, create_public_threads=False, create_private_threads=False),
+                interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=False, add_reactions=True, create_public_threads=False, create_private_threads=False),
             }
  
             owner_role = guild.get_role(OWNER_ROLE_ID)
             if owner_role:
-                overwrites[owner_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, add_reactions=True, create_public_threads=False, create_private_threads=False)
+                overwrites[owner_role] = discord.PermissionOverwrite(view_channel=True, send_messages=False, add_reactions=True, create_public_threads=False, create_private_threads=False)
  
             ticket_channel = await category.create_text_channel(name=channel_name, overwrites=overwrites)
  
@@ -927,7 +1035,7 @@ class RequestMiddlemanView(discord.ui.View):
  
                 overwrites = {
                     guild.default_role: discord.PermissionOverwrite(view_channel=False),
-                    interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True, add_reactions=True, create_public_threads=False, create_private_threads=False)
+                    interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=False, add_reactions=True, create_public_threads=False, create_private_threads=False)
                 }
  
                 admin_full_access_roles = [OWNER_ROLE_ID, CO_OWNER_ROLE_ID, ADMINISTRATOR_ROLE_ID]
@@ -936,9 +1044,9 @@ class RequestMiddlemanView(discord.ui.View):
                     role = guild.get_role(role_id)
                     if role:
                         if role_id in admin_full_access_roles:
-                            overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, add_reactions=True, create_public_threads=False, create_private_threads=False)
+                            overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=False, add_reactions=True, create_public_threads=False, create_private_threads=False)
                         else:
-                            overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, add_reactions=False, create_public_threads=False, create_private_threads=False)
+                            overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=False, add_reactions=False, create_public_threads=False, create_private_threads=False)
  
                 ticket_channel = await category.create_text_channel(name=channel_name, overwrites=overwrites)
  
@@ -975,6 +1083,24 @@ class TicketManagementView(discord.ui.View):
             await interaction.response.send_message("❌ You don't have permission to claim tickets!", ephemeral=True)
             return
  
+        
+        # CLOSE PERMISSION GUARD
+        ticket_data = load_ticket_data()
+        ch = ctx.channel.id if hasattr(ctx,'channel') else interaction.channel.id
+        t = None
+        for grp in ticket_data:
+            if isinstance(ticket_data[grp],dict):
+                for uid,inf in ticket_data[grp].items():
+                    if inf.get("channel_id")==ch:
+                        t=inf; break
+        if t:
+            allowed = [t.get("opener"), t.get("claimer")]
+            allowed += t.get("added_users",[])
+            owner_roles=[OWNER_ROLE_ID,CO_OWNER_ROLE_ID]
+            if (interaction.user.id not in allowed) and (not any(r.id in owner_roles for r in interaction.user.roles)):
+                await interaction.response.send_message("❌ You cannot close this ticket.",ephemeral=True)
+                return
+
         await interaction.response.defer()
  
         ticket_data = load_ticket_data()
@@ -1010,14 +1136,10 @@ class TicketManagementView(discord.ui.View):
             try:
                 prev_user = interaction.guild.get_member(previous_claimer_id)
                 if prev_user:
-                    await interaction.channel.set_permissions(prev_user, send_messages=True)
+                    await interaction.channel.set_permissions(prev_user, send_messages=False)
             except: pass
         # --- AI LOCK CHECK END ---
  
-        # block self-claim
-        if ticket_info.get("opener") == interaction.user.id:
-            await interaction.followup.send("❌ You cannot claim your own ticket.", ephemeral=True)
-            return
         ticket_info["claimer"] = interaction.user.id
         ticket_info["claimed_at"] = datetime.utcnow().isoformat()
         if "ai_locked" in ticket_info:
@@ -1027,7 +1149,7 @@ class TicketManagementView(discord.ui.View):
         await interaction.channel.set_permissions(
             interaction.user,
             view_channel=True,
-            send_messages=True,
+            send_messages=False,
             add_reactions=True,
             create_public_threads=False,
             create_private_threads=False
@@ -1563,7 +1685,7 @@ async def on_member_join(member):
         guild = member.guild
         for channel in guild.channels:
             try:
-                await channel.set_permissions(member, view_channel=True, send_messages=True, read_message_history=True)
+                await channel.set_permissions(member, view_channel=True, send_messages=False, read_message_history=True)
             except:
                 pass
     if memberrole:
@@ -1687,7 +1809,7 @@ async def add_user(interaction: discord.Interaction, user: discord.Member):
     await interaction.channel.set_permissions(
         user,
         view_channel=True,
-        send_messages=True,
+        send_messages=False,
         add_reactions=True
     )
  
@@ -1766,7 +1888,7 @@ async def transfer_ticket(interaction: discord.Interaction, user: discord.Member
     await interaction.channel.set_permissions(
         user,
         view_channel=True,
-        send_messages=True,
+        send_messages=False,
         add_reactions=True
     )
  
@@ -1803,7 +1925,25 @@ async def middleman_process(interaction: discord.Interaction):
 @bot.tree.command(name="close", description="Close the current ticket", guild=discord.Object(id=GUILD_ID))
 @app_commands.check(is_middleman_or_above)
 async def close_ticket_command(interaction: discord.Interaction):
-    await interaction.response.defer()
+    
+        # CLOSE PERMISSION GUARD
+        ticket_data = load_ticket_data()
+        ch = ctx.channel.id if hasattr(ctx,'channel') else interaction.channel.id
+        t = None
+        for grp in ticket_data:
+            if isinstance(ticket_data[grp],dict):
+                for uid,inf in ticket_data[grp].items():
+                    if inf.get("channel_id")==ch:
+                        t=inf; break
+        if t:
+            allowed = [t.get("opener"), t.get("claimer")]
+            allowed += t.get("added_users",[])
+            owner_roles=[OWNER_ROLE_ID,CO_OWNER_ROLE_ID]
+            if (interaction.user.id not in allowed) and (not any(r.id in owner_roles for r in interaction.user.roles)):
+                await interaction.response.send_message("❌ You cannot close this ticket.",ephemeral=True)
+                return
+
+        await interaction.response.defer()
     ticket_data = load_ticket_data()
     ticket_info = None
     user_id = None
@@ -2572,7 +2712,25 @@ async def commands_list(interaction: discord.Interaction):
 @bot.tree.command(name="afk", description="Set yourself as AFK with optional status", guild=discord.Object(id=GUILD_ID))
 @app_commands.describe(status="Optional AFK status message")
 async def set_afk(interaction: discord.Interaction, status: str = None):
-    await interaction.response.defer()
+    
+        # CLOSE PERMISSION GUARD
+        ticket_data = load_ticket_data()
+        ch = ctx.channel.id if hasattr(ctx,'channel') else interaction.channel.id
+        t = None
+        for grp in ticket_data:
+            if isinstance(ticket_data[grp],dict):
+                for uid,inf in ticket_data[grp].items():
+                    if inf.get("channel_id")==ch:
+                        t=inf; break
+        if t:
+            allowed = [t.get("opener"), t.get("claimer")]
+            allowed += t.get("added_users",[])
+            owner_roles=[OWNER_ROLE_ID,CO_OWNER_ROLE_ID]
+            if (interaction.user.id not in allowed) and (not any(r.id in owner_roles for r in interaction.user.roles)):
+                await interaction.response.send_message("❌ You cannot close this ticket.",ephemeral=True)
+                return
+
+        await interaction.response.defer()
     afk_data = load_afk_data()
     user_id = str(interaction.user.id)
  
@@ -2888,6 +3046,24 @@ class ConfirmTradeView(discord.ui.View):
         else:
             self.trader2_response = "yes"
  
+        
+        # CLOSE PERMISSION GUARD
+        ticket_data = load_ticket_data()
+        ch = ctx.channel.id if hasattr(ctx,'channel') else interaction.channel.id
+        t = None
+        for grp in ticket_data:
+            if isinstance(ticket_data[grp],dict):
+                for uid,inf in ticket_data[grp].items():
+                    if inf.get("channel_id")==ch:
+                        t=inf; break
+        if t:
+            allowed = [t.get("opener"), t.get("claimer")]
+            allowed += t.get("added_users",[])
+            owner_roles=[OWNER_ROLE_ID,CO_OWNER_ROLE_ID]
+            if (interaction.user.id not in allowed) and (not any(r.id in owner_roles for r in interaction.user.roles)):
+                await interaction.response.send_message("❌ You cannot close this ticket.",ephemeral=True)
+                return
+
         await interaction.response.defer()
         await self.check_and_post_result()
  
@@ -2902,6 +3078,24 @@ class ConfirmTradeView(discord.ui.View):
         else:
             self.trader2_response = "no"
  
+        
+        # CLOSE PERMISSION GUARD
+        ticket_data = load_ticket_data()
+        ch = ctx.channel.id if hasattr(ctx,'channel') else interaction.channel.id
+        t = None
+        for grp in ticket_data:
+            if isinstance(ticket_data[grp],dict):
+                for uid,inf in ticket_data[grp].items():
+                    if inf.get("channel_id")==ch:
+                        t=inf; break
+        if t:
+            allowed = [t.get("opener"), t.get("claimer")]
+            allowed += t.get("added_users",[])
+            owner_roles=[OWNER_ROLE_ID,CO_OWNER_ROLE_ID]
+            if (interaction.user.id not in allowed) and (not any(r.id in owner_roles for r in interaction.user.roles)):
+                await interaction.response.send_message("❌ You cannot close this ticket.",ephemeral=True)
+                return
+
         await interaction.response.defer()
         await self.check_and_post_result()
  
@@ -3492,6 +3686,24 @@ async def clear_channel(interaction: discord.Interaction):
         return
  
     try:
+        
+        # CLOSE PERMISSION GUARD
+        ticket_data = load_ticket_data()
+        ch = ctx.channel.id if hasattr(ctx,'channel') else interaction.channel.id
+        t = None
+        for grp in ticket_data:
+            if isinstance(ticket_data[grp],dict):
+                for uid,inf in ticket_data[grp].items():
+                    if inf.get("channel_id")==ch:
+                        t=inf; break
+        if t:
+            allowed = [t.get("opener"), t.get("claimer")]
+            allowed += t.get("added_users",[])
+            owner_roles=[OWNER_ROLE_ID,CO_OWNER_ROLE_ID]
+            if (interaction.user.id not in allowed) and (not any(r.id in owner_roles for r in interaction.user.roles)):
+                await interaction.response.send_message("❌ You cannot close this ticket.",ephemeral=True)
+                return
+
         await interaction.response.defer()
  
         channel = interaction.channel
@@ -3669,6 +3881,24 @@ class TradeConfirmationView(discord.ui.View):
             return
  
         self.votes[interaction.user.id] = True
+        
+        # CLOSE PERMISSION GUARD
+        ticket_data = load_ticket_data()
+        ch = ctx.channel.id if hasattr(ctx,'channel') else interaction.channel.id
+        t = None
+        for grp in ticket_data:
+            if isinstance(ticket_data[grp],dict):
+                for uid,inf in ticket_data[grp].items():
+                    if inf.get("channel_id")==ch:
+                        t=inf; break
+        if t:
+            allowed = [t.get("opener"), t.get("claimer")]
+            allowed += t.get("added_users",[])
+            owner_roles=[OWNER_ROLE_ID,CO_OWNER_ROLE_ID]
+            if (interaction.user.id not in allowed) and (not any(r.id in owner_roles for r in interaction.user.roles)):
+                await interaction.response.send_message("❌ You cannot close this ticket.",ephemeral=True)
+                return
+
         await interaction.response.defer()
  
         if all(v is not None for v in self.votes.values()):
@@ -3683,6 +3913,24 @@ class TradeConfirmationView(discord.ui.View):
             return
  
         self.votes[interaction.user.id] = False
+        
+        # CLOSE PERMISSION GUARD
+        ticket_data = load_ticket_data()
+        ch = ctx.channel.id if hasattr(ctx,'channel') else interaction.channel.id
+        t = None
+        for grp in ticket_data:
+            if isinstance(ticket_data[grp],dict):
+                for uid,inf in ticket_data[grp].items():
+                    if inf.get("channel_id")==ch:
+                        t=inf; break
+        if t:
+            allowed = [t.get("opener"), t.get("claimer")]
+            allowed += t.get("added_users",[])
+            owner_roles=[OWNER_ROLE_ID,CO_OWNER_ROLE_ID]
+            if (interaction.user.id not in allowed) and (not any(r.id in owner_roles for r in interaction.user.roles)):
+                await interaction.response.send_message("❌ You cannot close this ticket.",ephemeral=True)
+                return
+
         await interaction.response.defer()
  
         if all(v is not None for v in self.votes.values()):
@@ -3803,7 +4051,25 @@ THANK_YOU_CHANNEL = 1452840180888109067
 @bot.tree.command(name="legit_check", description="Post a legit check message with auto-reactions", guild=discord.Object(id=GUILD_ID))
 @app_commands.check(is_owner_only)
 async def legit_check(interaction: discord.Interaction):
-    await interaction.response.defer()
+    
+        # CLOSE PERMISSION GUARD
+        ticket_data = load_ticket_data()
+        ch = ctx.channel.id if hasattr(ctx,'channel') else interaction.channel.id
+        t = None
+        for grp in ticket_data:
+            if isinstance(ticket_data[grp],dict):
+                for uid,inf in ticket_data[grp].items():
+                    if inf.get("channel_id")==ch:
+                        t=inf; break
+        if t:
+            allowed = [t.get("opener"), t.get("claimer")]
+            allowed += t.get("added_users",[])
+            owner_roles=[OWNER_ROLE_ID,CO_OWNER_ROLE_ID]
+            if (interaction.user.id not in allowed) and (not any(r.id in owner_roles for r in interaction.user.roles)):
+                await interaction.response.send_message("❌ You cannot close this ticket.",ephemeral=True)
+                return
+
+        await interaction.response.defer()
  
     try:
         channel = bot.get_channel(LEGIT_CHECK_CHANNEL)
@@ -3944,7 +4210,25 @@ async def remove_verified(interaction: discord.Interaction, user: discord.Member
 @bot.tree.command(name="vouches", description="Check the number of vouches for a user", guild=discord.Object(id=GUILD_ID))
 @app_commands.describe(user="The user to check vouches for")
 async def vouches(interaction: discord.Interaction, user: discord.Member):
-    await interaction.response.defer()
+    
+        # CLOSE PERMISSION GUARD
+        ticket_data = load_ticket_data()
+        ch = ctx.channel.id if hasattr(ctx,'channel') else interaction.channel.id
+        t = None
+        for grp in ticket_data:
+            if isinstance(ticket_data[grp],dict):
+                for uid,inf in ticket_data[grp].items():
+                    if inf.get("channel_id")==ch:
+                        t=inf; break
+        if t:
+            allowed = [t.get("opener"), t.get("claimer")]
+            allowed += t.get("added_users",[])
+            owner_roles=[OWNER_ROLE_ID,CO_OWNER_ROLE_ID]
+            if (interaction.user.id not in allowed) and (not any(r.id in owner_roles for r in interaction.user.roles)):
+                await interaction.response.send_message("❌ You cannot close this ticket.",ephemeral=True)
+                return
+
+        await interaction.response.defer()
  
     VOUCHES_CHANNEL_ID = 1439598519471308861
     vouch_channel = interaction.guild.get_channel(VOUCHES_CHANNEL_ID)
@@ -4030,17 +4314,16 @@ if __name__ == "__main__":
 
 @bot.command()
 async def unclaim(ctx):
-    user_roles=[r.id for r in ctx.author.roles]
-    if MIDDLEMAN_ROLE_ID not in user_roles and not any(r in STAFF_ROLE_IDS for r in user_roles):
-        return await ctx.send("❌ Only middleman & above can unclaim.")
+    if ctx.channel.category_id != SUPPORT_CATEGORY_ID:
+        return await ctx.send("❌ Only for support tickets.")
     data=load_ticket_data()
-    for tgrp in data:
-        if isinstance(data[tgrp], dict):
-            for uid, info in data[tgrp].items():
-                if info.get("channel_id")==ctx.channel.id:
-                    if info.get("opener")==ctx.author.id:
+    for grp in data:
+        if isinstance(data[grp],dict):
+            for uid,inf in data[grp].items():
+                if inf.get("channel_id")==ctx.channel.id:
+                    if inf.get("opener")==ctx.author.id:
                         return await ctx.send("❌ You cannot unclaim your own ticket.")
-                    info["claimer"]=None
+                    inf["claimer"]=None
                     save_ticket_data(data)
-                    return await ctx.send("🔓 Ticket unclaimed.")
-    await ctx.send("❌ Not a ticket channel.")
+                    return await ctx.send("🔓 Unclaimed.")
+    await ctx.send("❌ Not a support ticket.")
