@@ -15,6 +15,8 @@ VERIFIED_ROLE_ID = 1439203352406921377
 STAFF_CHAT_CHANNEL_ID = 1439944303261647010
 MAIN_GUIDE_CHANNEL_ID = 1439218639847952448
 MIDDLEMAN_ROLE_ID = 1438896022590984295
+# The channel where people request tickets (used in rejection messages)
+REQUEST_CHANNEL_ID = 1438899065952927917 
 TRANSCRIPT_CHANNEL_ID = 1439211113420951643
 TICKET_DATA_FILE = "ticket_data.json"
 EMBED_COLOR = 0xFF00FF # Magenta
@@ -130,6 +132,7 @@ class StaffDashboard(discord.ui.View):
                 if not embed:
                     embed = discord.Embed(description=text, color=EMBED_COLOR)
                     embed.set_author(name="Trade Hub AI", icon_url=bot.user.display_avatar.url)
+                
                 await user_chan.send(embed=embed, file=file)
             await interaction.response.send_message("✅ Sent.", ephemeral=True)
         else:
@@ -149,22 +152,21 @@ class StaffDashboard(discord.ui.View):
 
     @discord.ui.button(label="🔄 Transfer", style=discord.ButtonStyle.blurple, row=0)
     async def btn_transfer(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # 1. Notify User
         await self.send_to_user(interaction, "For further assistance, I will now transfer this ticket to our middleman. Thanks for having me! 🫡")
-        # 2. Wait 5 Seconds
         await interaction.response.send_message("🔒 Transfer initiated. Closing your session in 5 seconds...", ephemeral=True)
         await asyncio.sleep(5)
-        # 3. Lock Staff Out (Close Session)
         await interaction.channel.set_permissions(interaction.user, send_messages=False)
 
     @discord.ui.button(label="Middleman", style=discord.ButtonStyle.gray, row=1)
     async def btn_mm1(self, interaction: discord.Interaction, button: discord.ui.Button):
         if os.path.exists("assets/middleman_process.webp"):
+            # TEXT + IMAGE IN ONE EMBED
             embed = discord.Embed(
                 description="**The middleman is the trusted person between traders.**\n\n・**Step 1:** Both parties give items to MM.\n・**Step 2:** MM verifies items.\n・**Step 3:** MM swaps items to respective parties.",
                 color=EMBED_COLOR
             )
-            file = discord.File("assets/middleman_process.webp")
+            file = discord.File("assets/middleman_process.webp", filename="mm_process.webp")
+            embed.set_image(url="attachment://mm_process.webp")
             await self.send_to_user(interaction, embed=embed, file=file)
         else:
             await interaction.response.send_message("❌ Image missing.", ephemeral=True)
@@ -173,7 +175,8 @@ class StaffDashboard(discord.ui.View):
     async def btn_mm2(self, interaction: discord.Interaction, button: discord.ui.Button):
         if os.path.exists("assets/middleman_info.jpg"):
             embed = discord.Embed(description="**Middleman Information**", color=EMBED_COLOR)
-            file = discord.File("assets/middleman_info.jpg")
+            file = discord.File("assets/middleman_info.jpg", filename="mm_info.jpg")
+            embed.set_image(url="attachment://mm_info.jpg")
             await self.send_to_user(interaction, embed=embed, file=file)
         else:
             await interaction.response.send_message("❌ Image missing.", ephemeral=True)
@@ -189,6 +192,19 @@ class StaffClaimView(discord.ui.View):
 
     @discord.ui.button(label="🔒 Claim & Unlock", style=discord.ButtonStyle.green, custom_id="ai_staff_claim")
     async def claim(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # 1. CHECK FOR SELF-CLAIM
+        data = load_ticket_data()
+        ticket_info = None
+        for uid, t in data.get("user_middleman_tickets", {}).items():
+            if t.get("staff_channel_id") == interaction.channel.id:
+                ticket_info = t
+                break
+        
+        if ticket_info and int(ticket_info.get("opener")) == interaction.user.id:
+            await interaction.response.send_message("❌ **Access Denied:** You cannot claim your own ticket.", ephemeral=True)
+            return
+
+        # 2. PROCEED
         overwrite = discord.PermissionOverwrite(view_channel=True, send_messages=True)
         await interaction.channel.set_permissions(interaction.user, overwrite=overwrite)
         
@@ -203,7 +219,6 @@ class StaffClaimView(discord.ui.View):
             user_chan_id = relay_map[interaction.channel.id]
             dashboard = StaffDashboard(user_chan_id)
             
-            # CONTROL PANEL EMBED WITH HELP GUIDE
             embed = discord.Embed(title="🎛️ Staff Control Panel", description="Use the buttons below to interact with the user.", color=discord.Color.dark_theme())
             embed.add_field(name="👋 Intro", value="Send Welcome Message", inline=True)
             embed.add_field(name="📝 Terms", value="Ask Service History", inline=True)
@@ -216,23 +231,40 @@ class StaffClaimView(discord.ui.View):
             await interaction.channel.send(embed=embed, view=dashboard)
 
 class TradePollView(discord.ui.View):
-    def __init__(self):
+    def __init__(self, allowed_users):
         super().__init__(timeout=None)
         self.votes = {}
+        self.allowed_users = allowed_users # List of user IDs
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id not in self.allowed_users:
+            await interaction.response.send_message("❌ **Access Denied:** You are not a participant in this trade.", ephemeral=True)
+            return False
+        return True
 
     async def check_votes(self, interaction):
         if len(self.votes) < 2: return 
         
         if all(self.votes.values()):
-            await interaction.channel.send("✅ **Both Users Accepted!** Waiting for Middleman...")
+            # BOTH ACCEPTED
+            await interaction.channel.send("✅ **Trade Accepted!** Both parties confirmed. Waiting for staff to proceed...")
+        
         elif not any(self.votes.values()):
-            await interaction.channel.send("❌ **Both Declined.** Closing ticket...")
-            await asyncio.sleep(3)
+            # BOTH DECLINED
+            await interaction.channel.send(f"🚫 **Trade Declined.**\nYou both declined the trade. I am now closing the ticket.\nFeel free to request a middleman anytime you want here: <#{REQUEST_CHANNEL_ID}>")
+            await asyncio.sleep(4)
+            # Find staff channel to close properly
             staff_chan_id = reverse_relay_map.get(interaction.channel.id)
             staff_chan = interaction.guild.get_channel(staff_chan_id) if staff_chan_id else None
             await close_ticket_logic(staff_chan, interaction.channel.id)
+        
         else:
-            await interaction.channel.send("⚠️ **Disagreement.** Please discuss.")
+            # MIXED / DISAGREEMENT
+            await interaction.channel.send(f"⚠️ **Trade Disagreement.**\nPlease decide the trade terms and confirm it before opening a ticket. I will close this now.\nFeel free to open a new ticket in <#{REQUEST_CHANNEL_ID}> when you are ready.")
+            await asyncio.sleep(4)
+            staff_chan_id = reverse_relay_map.get(interaction.channel.id)
+            staff_chan = interaction.guild.get_channel(staff_chan_id) if staff_chan_id else None
+            await close_ticket_logic(staff_chan, interaction.channel.id)
 
     @discord.ui.button(label="Accept Trade", style=discord.ButtonStyle.green)
     async def accept(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -281,7 +313,6 @@ class ChoiceView(discord.ui.View):
 
 class AIModal(discord.ui.Modal, title="AI Trade Setup"):
     trade_info = discord.ui.TextInput(label="Trade Details", style=discord.TextStyle.paragraph, placeholder="My X for their Y...")
-    # FIXED LABEL AS REQUESTED
     other_user = discord.ui.TextInput(label="Trading Partner (Username ONLY - No @)", placeholder="username")
 
     def __init__(self, owner_id):
@@ -297,9 +328,13 @@ class AIModal(discord.ui.Modal, title="AI Trade Setup"):
         target_member = discord.utils.get(guild.members, name=target_name)
             
         add_status = ""
+        # LIST OF ALLOWED VOTERS
+        allowed_voters = [interaction.user.id]
+        
         if target_member:
             await interaction.channel.set_permissions(target_member, view_channel=True, send_messages=True)
             add_status = f"\n✅ **Added:** {target_member.mention}"
+            allowed_voters.append(target_member.id)
         else:
             add_status = f"\n⚠️ **Note:** Could not find '{target_name}'. Please add them manually."
 
@@ -308,6 +343,7 @@ class AIModal(discord.ui.Modal, title="AI Trade Setup"):
         if cat: await cat.edit(overwrites={guild.default_role: discord.PermissionOverwrite(view_channel=True)})
         
         c_name = f"ai-{interaction.user.name}-{random.randint(1000,9999)}"
+        # Staff Read-Only Initially
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
             guild.get_role(OWNER_ROLE_ID): discord.PermissionOverwrite(view_channel=True, send_messages=True)
@@ -338,17 +374,11 @@ class AIModal(discord.ui.Modal, title="AI Trade Setup"):
         
         await staff_chan.send(content=f"<@&{MIDDLEMAN_ROLE_ID}>", embed=info_embed, view=view)
 
-        # 4. USER POLL (FIXED: Added Buttons)
+        # 4. USER POLL
         user_embed = discord.Embed(title="🤝 Trade Confirmation", description=f"**Trade:** {self.trade_info.value}\n\n**Participants:** {interaction.user.mention} & {target_member.mention if target_member else target_name}\n\n{add_status}\n\n*Please confirm the details above.*", color=EMBED_COLOR)
-        # Added View here to ensure buttons show up
-        await interaction.channel.send(embed=user_embed, view=TradePollView())
+        # PASS ALLOWED VOTERS TO VIEW
+        await interaction.channel.send(embed=user_embed, view=TradePollView(allowed_voters))
         await interaction.followup.send("AI Assistant Connected!", ephemeral=True)
-
-        # 5. USER COMMAND HELP
-        help_embed = discord.Embed(title="💡 User Commands", description="You can use these commands in this ticket:", color=EMBED_COLOR)
-        help_embed.add_field(name="`!middleman`", value="Show how the process works.", inline=False)
-        help_embed.add_field(name="`!middleman2`", value="Show info diagram.", inline=False)
-        await interaction.channel.send(embed=help_embed)
 
 # --- EVENTS ---
 
@@ -369,6 +399,7 @@ async def on_ready():
 
 @bot.event
 async def on_guild_channel_delete(channel):
+    # Auto-close
     if channel.id in reverse_relay_map:
         staff_chan_id = reverse_relay_map[channel.id]
         staff_chan = bot.get_channel(staff_chan_id)
@@ -395,6 +426,7 @@ async def on_guild_channel_delete(channel):
 
 @bot.event
 async def on_message_delete(message):
+    # Sync Deletes
     if message.id in message_link:
         target_msg_id = message_link[message.id]
         target_chan = None
