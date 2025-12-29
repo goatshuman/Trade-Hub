@@ -1,5 +1,5 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import json
 import os
 import asyncio
@@ -17,6 +17,7 @@ MAIN_GUIDE_CHANNEL_ID = 1439218639847952448
 MIDDLEMAN_ROLE_ID = 1438896022590984295
 TRANSCRIPT_CHANNEL_ID = 1439211113420951643
 TICKET_DATA_FILE = "ticket_data.json"
+EMBED_COLOR = 0xFF00FF # Magenta
 
 # Staff Roles
 STAFF_ROLES = [
@@ -101,18 +102,19 @@ async def close_ticket_logic(staff_channel, user_channel_id, closer_id=None):
 # --- VIEWS ---
 
 class StaffDashboard(discord.ui.View):
-    """The Premium Control Panel for Staff"""
     def __init__(self, user_chan_id):
         super().__init__(timeout=None)
         self.user_chan_id = user_chan_id
 
-    async def send_to_user(self, interaction, text):
+    async def send_to_user(self, interaction, text=None, embed=None, file=None):
         user_chan = bot.get_channel(self.user_chan_id)
         if user_chan:
-            embed = discord.Embed(description=text, color=discord.Color.blue())
-            embed.set_author(name="Trade Hub AI", icon_url=bot.user.display_avatar.url)
-            await user_chan.send(embed=embed)
-            await interaction.response.send_message(f"✅ Sent: *{text[:20]}...*", ephemeral=True)
+            if text or embed:
+                if not embed:
+                    embed = discord.Embed(description=text, color=EMBED_COLOR)
+                    embed.set_author(name="Trade Hub AI", icon_url=bot.user.display_avatar.url)
+                await user_chan.send(embed=embed, file=file)
+            await interaction.response.send_message("✅ Sent.", ephemeral=True)
         else:
             await interaction.response.send_message("❌ User channel not found.", ephemeral=True)
 
@@ -130,14 +132,32 @@ class StaffDashboard(discord.ui.View):
 
     @discord.ui.button(label="🔄 Transfer", style=discord.ButtonStyle.blurple, row=0)
     async def btn_transfer(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # 1. Notify User
         await self.send_to_user(interaction, "For further assistance, I will now transfer this ticket to our middleman. Thanks for having me! 🫡")
+        # 2. Wait 5 Seconds
+        await interaction.response.send_message("🔒 Transfer initiated. Closing your session in 5 seconds...", ephemeral=True)
+        await asyncio.sleep(5)
+        # 3. Lock Staff Out (Close Session)
+        await interaction.channel.set_permissions(interaction.user, send_messages=False)
 
-    @discord.ui.button(label="🖼️ MM Diagram", style=discord.ButtonStyle.gray, row=1)
-    async def btn_diagram(self, interaction: discord.Interaction, button: discord.ui.Button):
-        user_chan = bot.get_channel(self.user_chan_id)
-        if user_chan and os.path.exists("assets/middleman_process.webp"):
-            await user_chan.send(file=discord.File("assets/middleman_process.webp"))
-            await interaction.response.send_message("✅ Sent diagram.", ephemeral=True)
+    @discord.ui.button(label="Middleman", style=discord.ButtonStyle.gray, row=1)
+    async def btn_mm1(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if os.path.exists("assets/middleman_process.webp"):
+            embed = discord.Embed(
+                description="**The middleman is the trusted person between traders.**\n\n・**Step 1:** Both parties give items to MM.\n・**Step 2:** MM verifies items.\n・**Step 3:** MM swaps items to respective parties.",
+                color=EMBED_COLOR
+            )
+            file = discord.File("assets/middleman_process.webp")
+            await self.send_to_user(interaction, embed=embed, file=file)
+        else:
+            await interaction.response.send_message("❌ Image missing.", ephemeral=True)
+
+    @discord.ui.button(label="Middleman 2", style=discord.ButtonStyle.gray, row=1)
+    async def btn_mm2(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if os.path.exists("assets/middleman_info.jpg"):
+            embed = discord.Embed(description="**Middleman Information**", color=EMBED_COLOR)
+            file = discord.File("assets/middleman_info.jpg")
+            await self.send_to_user(interaction, embed=embed, file=file)
         else:
             await interaction.response.send_message("❌ Image missing.", ephemeral=True)
 
@@ -152,23 +172,30 @@ class StaffClaimView(discord.ui.View):
 
     @discord.ui.button(label="🔒 Claim & Unlock", style=discord.ButtonStyle.green, custom_id="ai_staff_claim")
     async def claim(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Strict Permission Grant
         overwrite = discord.PermissionOverwrite(view_channel=True, send_messages=True)
         await interaction.channel.set_permissions(interaction.user, overwrite=overwrite)
         
         await interaction.response.send_message(f"✅ **Claimed by {interaction.user.mention}**\nYou have write access.", ephemeral=False)
         
-        # Disable claim button
         button.disabled = True
         button.label = f"Claimed by {interaction.user.name}"
         button.style = discord.ButtonStyle.gray
         await interaction.message.edit(view=self)
 
-        # Send Control Panel
         if interaction.channel.id in relay_map:
             user_chan_id = relay_map[interaction.channel.id]
             dashboard = StaffDashboard(user_chan_id)
-            embed = discord.Embed(title="🎛️ Staff Control Panel", description="Click a button to send a quick reply to the user.", color=discord.Color.dark_theme())
+            
+            # CONTROL PANEL EMBED WITH HELP GUIDE
+            embed = discord.Embed(title="🎛️ Staff Control Panel", description="Use the buttons below to interact with the user.", color=discord.Color.dark_theme())
+            embed.add_field(name="👋 Intro", value="Send Welcome Message", inline=True)
+            embed.add_field(name="📝 Terms", value="Ask Service History", inline=True)
+            embed.add_field(name="❓ Process", value="Ask MM Knowledge", inline=True)
+            embed.add_field(name="🔄 Transfer", value="**End Session (5s Timer)**", inline=True)
+            embed.add_field(name="🖼️ MM / MM2", value="Send Diagrams", inline=True)
+            embed.add_field(name="⛔ Close", value="Delete Ticket & Log", inline=True)
+            embed.add_field(name="⚠️ Need to Transfer Ownership?", value="To fully transfer the ticket to another staff member (give them write access), use:\n**`!transfer @User`**", inline=False)
+            
             await interaction.channel.send(embed=embed, view=dashboard)
 
 class ChoiceView(discord.ui.View):
@@ -206,7 +233,7 @@ class ChoiceView(discord.ui.View):
 
 class AIModal(discord.ui.Modal, title="AI Trade Setup"):
     trade_info = discord.ui.TextInput(label="Trade Details", style=discord.TextStyle.paragraph, placeholder="My X for their Y...")
-    other_user = discord.ui.TextInput(label="Trading Partner (Username/@)", placeholder="username")
+    other_user = discord.ui.TextInput(label="Trading Partner (Username ONLY - No @)", placeholder="username")
 
     def __init__(self, owner_id):
         super().__init__()
@@ -218,21 +245,14 @@ class AIModal(discord.ui.Modal, title="AI Trade Setup"):
         
         # 1. FIND PARTNER
         target_name = self.other_user.value.strip()
-        target_member = None
-        if target_name.startswith("<@") and target_name.endswith(">"):
-            try:
-                uid = int(target_name.strip("<@!>"))
-                target_member = guild.get_member(uid)
-            except: pass
-        if not target_member:
-            target_member = discord.utils.get(guild.members, name=target_name)
+        target_member = discord.utils.get(guild.members, name=target_name)
             
         add_status = ""
         if target_member:
             await interaction.channel.set_permissions(target_member, view_channel=True, send_messages=True)
             add_status = f"\n✅ **Added:** {target_member.mention}"
         else:
-            add_status = f"\n⚠️ **Note:** Could not find '{target_name}'. Add manually via `!add`."
+            add_status = f"\n⚠️ **Note:** Could not find '{target_name}'. Please add them manually."
 
         # 2. CREATE STAFF CHANNEL
         cat = guild.get_channel(AI_CATEGORY_ID)
@@ -252,6 +272,14 @@ class AIModal(discord.ui.Modal, title="AI Trade Setup"):
         relay_map[staff_chan.id] = interaction.channel.id
         reverse_relay_map[interaction.channel.id] = staff_chan.id
         
+        # SAVE MAP TO DB (PERSISTENCE)
+        data = load_ticket_data()
+        for uid, t in data.get("user_middleman_tickets", {}).items():
+            if t["channel_id"] == interaction.channel.id:
+                t["staff_channel_id"] = staff_chan.id
+                save_ticket_data(data)
+                break
+
         # 3. STAFF EMBED
         view = StaffClaimView()
         info_embed = discord.Embed(title="🤖 New AI Ticket", color=discord.Color.gold())
@@ -263,19 +291,32 @@ class AIModal(discord.ui.Modal, title="AI Trade Setup"):
         await staff_chan.send(content=f"<@&{MIDDLEMAN_ROLE_ID}>", embed=info_embed, view=view)
 
         # 4. USER POLL
-        user_embed = discord.Embed(title="🤝 Trade Confirmation", description=f"**Trade:** {self.trade_info.value}\n\n**Participants:** {interaction.user.mention} & {target_member.mention if target_member else target_name}\n\n{add_status}\n\n*Please confirm the details above.*", color=discord.Color.blue())
-        # Note: Add TradePollView here if defined, reusing standard logic for brevity
+        user_embed = discord.Embed(title="🤝 Trade Confirmation", description=f"**Trade:** {self.trade_info.value}\n\n**Participants:** {interaction.user.mention} & {target_member.mention if target_member else target_name}\n\n{add_status}\n\n*Please confirm the details above.*", color=EMBED_COLOR)
         await interaction.channel.send(embed=user_embed)
         await interaction.followup.send("AI Assistant Connected!", ephemeral=True)
+
+        # 5. USER COMMAND HELP
+        help_embed = discord.Embed(title="💡 User Commands", description="You can use these commands in this ticket:", color=EMBED_COLOR)
+        help_embed.add_field(name="`!middleman`", value="Show how the process works.", inline=False)
+        help_embed.add_field(name="`!middleman2`", value="Show info diagram.", inline=False)
+        await interaction.channel.send(embed=help_embed)
 
 # --- EVENTS ---
 
 @bot.event
 async def on_ready():
     print(f"✅ Relay Bot Online: {bot.user}")
-    # CRITICAL: Register Views to make buttons work after restart
     bot.add_view(StaffClaimView())
-    # Note: ChoiceView needs owner_id, so it can't be purely persistent, but standard flow works if bot is on.
+    
+    # REBUILD MAPS FROM DB
+    data = load_ticket_data()
+    for uid, t in data.get("user_middleman_tickets", {}).items():
+        if "channel_id" in t and "staff_channel_id" in t:
+            user_id = t["channel_id"]
+            staff_id = t["staff_channel_id"]
+            relay_map[staff_id] = user_id
+            reverse_relay_map[user_id] = staff_id
+    print(f"✅ Restored {len(relay_map)} active sessions.")
 
 @bot.event
 async def on_guild_channel_delete(channel):
@@ -347,8 +388,8 @@ async def on_message(message):
         user_chan = bot.get_channel(user_chan_id)
         if not user_chan: return
 
-        # Commands (Backups)
         content = message.content
+        
         if content.startswith("!close"):
             await message.channel.send("🔒 Closing...")
             await close_ticket_logic(message.channel, user_chan_id, closer_id=message.author.id)
@@ -380,7 +421,7 @@ async def on_message(message):
 
         # Text Relay
         if message.content:
-            embed = discord.Embed(description=message.content, color=discord.Color.blue())
+            embed = discord.Embed(description=message.content, color=EMBED_COLOR)
             embed.set_author(name="Trade Hub AI", icon_url=bot.user.display_avatar.url)
             sent_msg = await user_chan.send(embed=embed)
             message_link[message.id] = sent_msg.id
@@ -395,7 +436,7 @@ async def on_message(message):
         staff_chan = bot.get_channel(staff_chan_id)
         if staff_chan:
             if message.content:
-                embed = discord.Embed(description=message.content, color=discord.Color.green())
+                embed = discord.Embed(description=message.content, color=EMBED_COLOR)
                 embed.set_author(name=message.author.name, icon_url=message.author.display_avatar.url)
                 embed.set_footer(text="User Reply")
                 sent_msg = await staff_chan.send(embed=embed)
