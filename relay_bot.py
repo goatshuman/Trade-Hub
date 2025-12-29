@@ -99,6 +99,23 @@ async def close_ticket_logic(staff_channel, user_channel_id, closer_id=None):
         try: await staff_channel.delete()
         except: pass
 
+async def update_timer(view, channel, timer_msg_id):
+    for remaining in range(60, -1, -1):
+        if view.user_responded: return
+        try:
+            timer_msg = await channel.fetch_message(timer_msg_id)
+            embed = discord.Embed(title="⏱️ Verification Timer", description=f"**Time Remaining: {remaining} seconds**", color=discord.Color.blue())
+            await timer_msg.edit(embed=embed)
+        except: break
+        if remaining > 0: await asyncio.sleep(1)
+    
+    if not view.user_responded:
+        view.is_timed_out = True
+        try:
+            timer_msg = await channel.fetch_message(timer_msg_id)
+            await timer_msg.delete()
+        except: pass
+
 # --- VIEWS ---
 
 class StaffDashboard(discord.ui.View):
@@ -198,6 +215,37 @@ class StaffClaimView(discord.ui.View):
             
             await interaction.channel.send(embed=embed, view=dashboard)
 
+class TradePollView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.votes = {}
+
+    async def check_votes(self, interaction):
+        if len(self.votes) < 2: return 
+        
+        if all(self.votes.values()):
+            await interaction.channel.send("✅ **Both Users Accepted!** Waiting for Middleman...")
+        elif not any(self.votes.values()):
+            await interaction.channel.send("❌ **Both Declined.** Closing ticket...")
+            await asyncio.sleep(3)
+            staff_chan_id = reverse_relay_map.get(interaction.channel.id)
+            staff_chan = interaction.guild.get_channel(staff_chan_id) if staff_chan_id else None
+            await close_ticket_logic(staff_chan, interaction.channel.id)
+        else:
+            await interaction.channel.send("⚠️ **Disagreement.** Please discuss.")
+
+    @discord.ui.button(label="Accept Trade", style=discord.ButtonStyle.green)
+    async def accept(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.votes[interaction.user.id] = True
+        await interaction.response.send_message(f"{interaction.user.mention} Accepted.", ephemeral=False)
+        await self.check_votes(interaction)
+
+    @discord.ui.button(label="Decline Trade", style=discord.ButtonStyle.red)
+    async def decline(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.votes[interaction.user.id] = False
+        await interaction.response.send_message(f"{interaction.user.mention} Declined.", ephemeral=False)
+        await self.check_votes(interaction)
+
 class ChoiceView(discord.ui.View):
     def __init__(self, owner_id):
         super().__init__(timeout=None)
@@ -233,6 +281,7 @@ class ChoiceView(discord.ui.View):
 
 class AIModal(discord.ui.Modal, title="AI Trade Setup"):
     trade_info = discord.ui.TextInput(label="Trade Details", style=discord.TextStyle.paragraph, placeholder="My X for their Y...")
+    # FIXED LABEL AS REQUESTED
     other_user = discord.ui.TextInput(label="Trading Partner (Username ONLY - No @)", placeholder="username")
 
     def __init__(self, owner_id):
@@ -259,7 +308,6 @@ class AIModal(discord.ui.Modal, title="AI Trade Setup"):
         if cat: await cat.edit(overwrites={guild.default_role: discord.PermissionOverwrite(view_channel=True)})
         
         c_name = f"ai-{interaction.user.name}-{random.randint(1000,9999)}"
-        # Staff Read-Only Initially
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
             guild.get_role(OWNER_ROLE_ID): discord.PermissionOverwrite(view_channel=True, send_messages=True)
@@ -272,7 +320,7 @@ class AIModal(discord.ui.Modal, title="AI Trade Setup"):
         relay_map[staff_chan.id] = interaction.channel.id
         reverse_relay_map[interaction.channel.id] = staff_chan.id
         
-        # SAVE MAP TO DB (PERSISTENCE)
+        # SAVE MAP TO DB
         data = load_ticket_data()
         for uid, t in data.get("user_middleman_tickets", {}).items():
             if t["channel_id"] == interaction.channel.id:
@@ -290,9 +338,10 @@ class AIModal(discord.ui.Modal, title="AI Trade Setup"):
         
         await staff_chan.send(content=f"<@&{MIDDLEMAN_ROLE_ID}>", embed=info_embed, view=view)
 
-        # 4. USER POLL
+        # 4. USER POLL (FIXED: Added Buttons)
         user_embed = discord.Embed(title="🤝 Trade Confirmation", description=f"**Trade:** {self.trade_info.value}\n\n**Participants:** {interaction.user.mention} & {target_member.mention if target_member else target_name}\n\n{add_status}\n\n*Please confirm the details above.*", color=EMBED_COLOR)
-        await interaction.channel.send(embed=user_embed)
+        # Added View here to ensure buttons show up
+        await interaction.channel.send(embed=user_embed, view=TradePollView())
         await interaction.followup.send("AI Assistant Connected!", ephemeral=True)
 
         # 5. USER COMMAND HELP
@@ -308,7 +357,7 @@ async def on_ready():
     print(f"✅ Relay Bot Online: {bot.user}")
     bot.add_view(StaffClaimView())
     
-    # REBUILD MAPS FROM DB
+    # REBUILD MAPS
     data = load_ticket_data()
     for uid, t in data.get("user_middleman_tickets", {}).items():
         if "channel_id" in t and "staff_channel_id" in t:
@@ -320,7 +369,6 @@ async def on_ready():
 
 @bot.event
 async def on_guild_channel_delete(channel):
-    # Auto-close
     if channel.id in reverse_relay_map:
         staff_chan_id = reverse_relay_map[channel.id]
         staff_chan = bot.get_channel(staff_chan_id)
@@ -347,7 +395,6 @@ async def on_guild_channel_delete(channel):
 
 @bot.event
 async def on_message_delete(message):
-    # Sync Deletes
     if message.id in message_link:
         target_msg_id = message_link[message.id]
         target_chan = None
