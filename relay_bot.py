@@ -159,22 +159,42 @@ class StaffDashboard(discord.ui.View):
 
     @discord.ui.button(label="🔄 Transfer", style=discord.ButtonStyle.blurple, row=0)
     async def btn_transfer(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # 1. Notify User
+        # 1. Notify User (Main Ticket)
         await self.send_to_user(interaction, "For further assistance, I will now transfer this ticket to our middleman. Thanks for having me! 🫡")
-        # 2. Notify Staff
-        await interaction.response.send_message("🔒 **Transfer Initiated:** AI Ticket will auto-close in 10 seconds...", ephemeral=True)
         
-        # 3. Wait 10s
-        await asyncio.sleep(10)
+        # 2. Update Database to unlock ticket for Main Bot (so humans can claim)
+        data = load_ticket_data()
+        opener_id = "Unknown"
+        for uid, t in data.get("user_middleman_tickets", {}).items():
+            if t.get("staff_channel_id") == interaction.channel.id:
+                opener_id = t.get("opener", "Unknown")
+                t["ai_locked"] = False
+                t["claimer"] = None 
+                if "staff_channel_id" in t: del t["staff_channel_id"]
+                save_ticket_data(data)
+                break
+
+        # 3. Notify Staff & Generate Transcript
+        await interaction.response.send_message("📝 **Generating Transcript...**", ephemeral=True)
+        await create_transcript(interaction.channel, opener_id, interaction.user.id, interaction.user.id)
+
+        # 4. Timer Message
+        msg = await interaction.channel.send("🔒 **Transfer Initiated. Closing AI Session in 10 seconds...**")
         
-        # 4. UNLINK Channels so user ticket DOES NOT close
+        # 5. Countdown Loop
+        for i in range(9, 0, -1):
+            await asyncio.sleep(1)
+            try: await msg.edit(content=f"🔒 **Closing AI Session in {i} seconds...**")
+            except: break
+        
+        # 6. UNLINK Channels (Critical: Prevents Main Ticket Deletion)
         staff_chan_id = interaction.channel.id
         user_chan_id = relay_map.get(staff_chan_id)
         
         if staff_chan_id in relay_map: del relay_map[staff_chan_id]
         if user_chan_id in reverse_relay_map: del reverse_relay_map[user_chan_id]
         
-        # 5. Delete AI Ticket
+        # 7. Delete AI Ticket
         try: await interaction.channel.delete()
         except: pass
 
@@ -194,7 +214,10 @@ class StaffDashboard(discord.ui.View):
     @discord.ui.button(label="Middleman 2", style=discord.ButtonStyle.gray, row=1)
     async def btn_mm2(self, interaction: discord.Interaction, button: discord.ui.Button):
         if os.path.exists("assets/middleman_info.jpg"):
-            embed = discord.Embed(description="**Middleman Information**", color=EMBED_COLOR)
+            embed = discord.Embed(
+                description="**The middleman is the trusted person between traders.**\n\n・**Step 1:** Both parties give items to MM.\n・**Step 2:** MM verifies items.\n・**Step 3:** MM swaps items to respective parties.",
+                color=EMBED_COLOR
+            )
             file = discord.File("assets/middleman_info.jpg", filename="mm_info.jpg")
             embed.set_image(url="attachment://mm_info.jpg")
             await self.send_to_user(interaction, embed=embed, file=file)
@@ -400,7 +423,6 @@ async def on_ready():
     print(f"✅ Relay Bot Online: {bot.user}")
     bot.add_view(StaffClaimView())
     
-    # REBUILD MAPS
     data = load_ticket_data()
     for uid, t in data.get("user_middleman_tickets", {}).items():
         if "channel_id" in t and "staff_channel_id" in t:
