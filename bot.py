@@ -584,7 +584,7 @@ class SupportTicketView(discord.ui.View):
     @discord.ui.button(label="Make Support", style=discord.ButtonStyle.success, custom_id="support_ticket_button")
     async def make_support(self, interaction: discord.Interaction, button: discord.ui.Button):
 
-# ONLY OWNER or SUPER ADMINS may open tickets
+# Creation guard: only owner role or super admins can open tickets
 try:
     user_roles = [r.id for r in interaction.user.roles]
 except:
@@ -641,8 +641,7 @@ if not (OWNER_ROLE_ID in user_roles or interaction.user.id in SUPER_ADMINS):
                         if role_id in admin_full_access_roles:
                             overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, add_reactions=True, create_public_threads=False, create_private_threads=False)
                         else:
-                            # For support tickets: allow middleman & above to type before claim
-                            overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, add_reactions=True, create_public_threads=False, create_private_threads=False)
+                            overwrites[role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, add_reactions=False, create_public_threads=False, create_private_threads=False)
  
                 ticket_channel = await category.create_text_channel(name=channel_name, overwrites=overwrites)
  
@@ -676,7 +675,7 @@ class BuyRanksTicketView(discord.ui.View):
     @discord.ui.button(label="Buy Ranks", style=discord.ButtonStyle.blurple, custom_id="buyranks_ticket_button")
     async def make_buyranks_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
 
-# ONLY OWNER or SUPER ADMINS may open tickets
+# Creation guard: only owner role or super admins can open tickets
 try:
     user_roles = [r.id for r in interaction.user.roles]
 except:
@@ -761,7 +760,7 @@ class BuyItemsTicketView(discord.ui.View):
     @discord.ui.button(label="Buy Items", style=discord.ButtonStyle.blurple, custom_id="buyitems_ticket_button")
     async def make_buyitems_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
 
-# ONLY OWNER or SUPER ADMINS may open tickets
+# Creation guard: only owner role or super admins can open tickets
 try:
     user_roles = [r.id for r in interaction.user.roles]
 except:
@@ -843,7 +842,7 @@ class BuyPersonalMiddlemanView(discord.ui.View):
     @discord.ui.button(label="Buy Personal Middleman", style=discord.ButtonStyle.blurple, custom_id="buy_personal_middleman_button")
     async def buy_personal_middleman(self, interaction: discord.Interaction, button: discord.ui.Button):
 
-# ONLY OWNER or SUPER ADMINS may open tickets
+# Creation guard: only owner role or super admins can open tickets
 try:
     user_roles = [r.id for r in interaction.user.roles]
 except:
@@ -933,7 +932,7 @@ class RequestMiddlemanView(discord.ui.View):
     @discord.ui.button(label="Request Middleman", style=discord.ButtonStyle.primary, custom_id="request_middleman_button")
     async def request_middleman(self, interaction: discord.Interaction, button: discord.ui.Button):
 
-# ONLY OWNER or SUPER ADMINS may open tickets
+# Creation guard: only owner role or super admins can open tickets
 try:
     user_roles = [r.id for r in interaction.user.roles]
 except:
@@ -981,7 +980,7 @@ if not (OWNER_ROLE_ID in user_roles or interaction.user.id in SUPER_ADMINS):
                     interaction.user: discord.PermissionOverwrite(view_channel=True, send_messages=True, add_reactions=True, create_public_threads=False, create_private_threads=False)
                 }
  
-                admin_full_access_roles = [OWNER_ROLE_ID]  # only owner allowed to send by default; others require claim
+                admin_full_access_roles = [OWNER_ROLE_ID, CO_OWNER_ROLE_ID, ADMINISTRATOR_ROLE_ID]
  
                 for role_id in STAFF_ROLE_IDS:
                     role = guild.get_role(role_id)
@@ -1027,26 +1026,6 @@ class TicketManagementView(discord.ui.View):
             return
  
         await interaction.response.defer()
-
-# Prevent opener from claiming their own ticket
-try:
-    # ticket_info is looked up later; we perform a quick lookup here
-    ticket_data_quick = load_ticket_data()
-    found_info = None
-    for ttype in ["user_middleman_tickets","user_support_tickets","user_buyranks_tickets","user_buyitems_tickets","user_personal_middleman_tickets"]:
-        for uid, data in ticket_data_quick.get(ttype, {}).items():
-            if data.get("channel_id") == interaction.channel.id:
-                found_info = data
-                break
-        if found_info:
-            break
-    if found_info and found_info.get('opener') == interaction.user.id:
-        await interaction.followup.send("❌ You cannot claim your own ticket.", ephemeral=True)
-        return
-except Exception:
-    pass
-
-
  
         ticket_data = load_ticket_data()
         ticket_info = None
@@ -1085,7 +1064,13 @@ except Exception:
             except: pass
         # --- AI LOCK CHECK END ---
  
-        ticket_info["claimer"] = interaction.user.id
+        
+# prevent opener from claiming their own ticket
+if ticket_info.get("opener") == interaction.user.id:
+    await interaction.followup.send("❌ You cannot claim your own ticket.", ephemeral=True)
+    return
+ticket_info["claimer"] = interaction.user.id
+
         ticket_info["claimed_at"] = datetime.utcnow().isoformat()
         if "ai_locked" in ticket_info:
             ticket_info["ai_locked"] = False
