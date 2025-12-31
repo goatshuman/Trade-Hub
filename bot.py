@@ -1344,7 +1344,7 @@ async def on_member_join(member):
     
     member_number = member.guild.member_count
     
-    welcome_images = ["welcome1.png", "welcome2.png", "welcome3.png", "welcome4.png", "welcome5.png", "welcome6.png", "welcome7.png", "welcome8.png"]
+    welcome_images = ["../attached_assets/welcome1.png", "../attached_assets/welcome2.png", "../attached_assets/welcome3.png", "../attached_assets/welcome4.png", "../attached_assets/welcome5.png", "../attached_assets/welcome6.png", "../attached_assets/welcome7.png", "../attached_assets/welcome8.png"]
     random_image = random.choice(welcome_images)
     
     welcome_channel = member.guild.get_channel(WELCOME_CHANNEL_ID)
