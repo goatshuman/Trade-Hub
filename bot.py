@@ -1326,6 +1326,26 @@ async def on_ready():
     
     bot.loop.create_task(update_activity())
 
+async def get_welcome_image_url():
+    api_url = "https://api.github.com/repos/goatshuman/Trade-Hub/contents/assets"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(api_url) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    # Filter for files starting with 'welcome' and are images
+                    images = [
+                        item['download_url'] 
+                        for item in data 
+                        if item['name'].lower().startswith('welcome') 
+                        and item['name'].lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp'))
+                    ]
+                    if images:
+                        return random.choice(images)
+    except Exception as e:
+        print(f"Error fetching welcome images: {e}")
+    return None
+
 @bot.event
 async def on_member_join(member):
     if member.guild.id != GUILD_ID:
@@ -1345,8 +1365,8 @@ async def on_member_join(member):
     
     member_number = member.guild.member_count
     
-    welcome_images = ["welcome1.png", "welcome2.png", "welcome3.png", "welcome4.png", "welcome5.png", "welcome6.png", "welcome7.png", "welcome8.png"]
-    random_image_name = random.choice(welcome_images)
+    # Fetch random welcome image from GitHub
+    welcome_image_url = await get_welcome_image_url()
     
     welcome_channel = member.guild.get_channel(WELCOME_CHANNEL_ID)
     if welcome_channel:
@@ -1364,13 +1384,13 @@ async def on_member_join(member):
         welcome_embed.set_footer(text=""+FOOTER_TEXT+"")
         
         try:
-            if GITHUB_ASSETS_URL:
-                image_url = f"{GITHUB_ASSETS_URL}/{random_image_name}"
+            if welcome_image_url:
                 async with aiohttp.ClientSession() as session:
-                    async with session.get(image_url) as resp:
+                    async with session.get(welcome_image_url) as resp:
                         if resp.status == 200:
                             image_data = io.BytesIO(await resp.read())
-                            file = discord.File(image_data, filename=random_image_name)
+                            filename = welcome_image_url.split('/')[-1]
+                            file = discord.File(image_data, filename=filename)
                             await welcome_channel.send(f"{member.mention}", embed=welcome_embed, file=file)
                         else:
                             await welcome_channel.send(f"{member.mention}", embed=welcome_embed)
@@ -1389,13 +1409,13 @@ async def on_member_join(member):
     dm_embed.set_footer(text=""+FOOTER_TEXT+"")
     
     try:
-        if GITHUB_ASSETS_URL:
-            image_url = f"{GITHUB_ASSETS_URL}/{random_image_name}"
+        if welcome_image_url:
             async with aiohttp.ClientSession() as session:
-                async with session.get(image_url) as resp:
+                async with session.get(welcome_image_url) as resp:
                     if resp.status == 200:
                         image_data = io.BytesIO(await resp.read())
-                        file = discord.File(image_data, filename=random_image_name)
+                        filename = welcome_image_url.split('/')[-1]
+                        file = discord.File(image_data, filename=filename)
                         await member.send(embed=dm_embed, file=file)
                     else:
                         await member.send(embed=dm_embed)
