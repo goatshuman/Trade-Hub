@@ -78,6 +78,7 @@ def getinvitedetails(guild, user):
 config = load_config()
 LOGO_URL = config.get("logo_url", "")
 FOOTER_TEXT = config.get("footer_text", "Powered by Trade Hub")
+GITHUB_ASSETS_URL = config.get("github_assets_url", "")
 
 intents = discord.Intents.default()
 intents.members = True
@@ -1344,8 +1345,8 @@ async def on_member_join(member):
     
     member_number = member.guild.member_count
     
-    welcome_images = ["../attached_assets/welcome1.png", "../attached_assets/welcome2.png", "../attached_assets/welcome3.png", "../attached_assets/welcome4.png", "../attached_assets/welcome5.png", "../attached_assets/welcome6.png", "../attached_assets/welcome7.png", "../attached_assets/welcome8.png"]
-    random_image = random.choice(welcome_images)
+    welcome_images = ["welcome1.png", "welcome2.png", "welcome3.png", "welcome4.png", "welcome5.png", "welcome6.png", "welcome7.png", "welcome8.png"]
+    random_image_name = random.choice(welcome_images)
     
     welcome_channel = member.guild.get_channel(WELCOME_CHANNEL_ID)
     if welcome_channel:
@@ -1363,9 +1364,20 @@ async def on_member_join(member):
         welcome_embed.set_footer(text=""+FOOTER_TEXT+"")
         
         try:
-            file = discord.File(random_image)
-            await welcome_channel.send(f"{member.mention}", embed=welcome_embed, file=file)
-        except:
+            if GITHUB_ASSETS_URL:
+                image_url = f"{GITHUB_ASSETS_URL}/{random_image_name}"
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(image_url) as resp:
+                        if resp.status == 200:
+                            image_data = io.BytesIO(await resp.read())
+                            file = discord.File(image_data, filename=random_image_name)
+                            await welcome_channel.send(f"{member.mention}", embed=welcome_embed, file=file)
+                        else:
+                            await welcome_channel.send(f"{member.mention}", embed=welcome_embed)
+            else:
+                await welcome_channel.send(f"{member.mention}", embed=welcome_embed)
+        except Exception as e:
+            print(f"Error sending welcome image to channel: {e}")
             await welcome_channel.send(f"{member.mention}", embed=welcome_embed)
     
     dm_embed = discord.Embed(
@@ -1377,9 +1389,20 @@ async def on_member_join(member):
     dm_embed.set_footer(text=""+FOOTER_TEXT+"")
     
     try:
-        file = discord.File(random_image)
-        await member.send(embed=dm_embed, file=file)
-    except:
+        if GITHUB_ASSETS_URL:
+            image_url = f"{GITHUB_ASSETS_URL}/{random_image_name}"
+            async with aiohttp.ClientSession() as session:
+                async with session.get(image_url) as resp:
+                    if resp.status == 200:
+                        image_data = io.BytesIO(await resp.read())
+                        file = discord.File(image_data, filename=random_image_name)
+                        await member.send(embed=dm_embed, file=file)
+                    else:
+                        await member.send(embed=dm_embed)
+        else:
+            await member.send(embed=dm_embed)
+    except Exception as e:
+        print(f"Error sending DM to {member.name}: {e}")
         try:
             await member.send(embed=dm_embed)
         except:
@@ -1414,17 +1437,23 @@ async def on_member_join(member):
             
             log_channel_id = guildsettings.get(guildid)
             if log_channel_id:
-                log_channel = guild.get_channel(int(log_channel_id))
-                if log_channel:
-                    total_invites = gettotalinvites(guild, inviter)
-                    embed = discord.Embed(
-                        title="📨 New Member Invited",
-                        description=f"**{member.mention}** got invited by **{inviter.mention}**\n**{inviter.mention}** now has **{total_invites}** invites",
-                        color=discord.Color.blurple()
-                    )
-                    embed.set_thumbnail(url=member.display_avatar.url)
-                    embed.set_footer(text=FOOTER_TEXT, icon_url=LOGO_URL)
-                    await log_channel.send(embed=embed)
+                try:
+                    log_channel = guild.get_channel(int(log_channel_id))
+                    if log_channel:
+                        total_invites = gettotalinvites(guild, inviter)
+                        embed = discord.Embed(
+                            title="📨 New Member Invited",
+                            description=f"**{member.mention}** got invited by **{inviter.mention}**\n**{inviter.mention}** now has **{total_invites}** invites",
+                            color=discord.Color.blurple()
+                        )
+                        embed.set_thumbnail(url=member.display_avatar.url)
+                        embed.set_footer(text=FOOTER_TEXT, icon_url=LOGO_URL)
+                        await log_channel.send(embed=embed)
+                        print(f"✅ Invite logged: {member.name} invited by {inviter.name}")
+                except Exception as log_error:
+                    print(f"Error sending invite log: {log_error}")
+        else:
+            print(f"No inviter detected for {member.name}")
     except Exception as e:
         print(f"Error tracking invite for {member.name}: {e}")
 
