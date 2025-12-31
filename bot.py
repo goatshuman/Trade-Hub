@@ -57,13 +57,22 @@ def getinvitedetails(guild, user):
     if guildid not in invitetracker or userid not in invitetracker[guildid]:
         return []
     details = []
+    to_remove = []
     for joinedidstr, count in invitetracker[guildid][userid].items():
         try:
             joineduser = guild.get_member(int(joinedidstr))
             if joineduser:
                 details.append((joineduser, count))
+            else:
+                to_remove.append(joinedidstr)
         except:
-            continue
+            to_remove.append(joinedidstr)
+    
+    for joinedid in to_remove:
+        del invitetracker[guildid][userid][joinedid]
+    if to_remove:
+        savedata()
+    
     return details
 
 config = load_config()
@@ -725,16 +734,21 @@ class TicketManagementView(discord.ui.View):
             await interaction.followup.send("❌ Ticket data not found!", ephemeral=True)
             return
         
+        is_owner = any(role.id == OWNER_ROLE_ID for role in interaction.user.roles)
+        is_super_admin = interaction.user.id in SUPER_ADMINS
+        is_support_ticket = ticket_info.get("type") == "support"
+        
+        if is_support_ticket:
+            if not (is_owner or is_super_admin):
+                await interaction.followup.send("❌ Only owner & super owner can claim support tickets!", ephemeral=True)
+                return
+        
         if interaction.user.id == ticket_info["opener"]:
             await interaction.followup.send("❌ You cannot claim your own ticket!", ephemeral=True)
             return
         
-        is_owner = any(role.id == OWNER_ROLE_ID for role in interaction.user.roles)
-        is_super_admin = interaction.user.id in SUPER_ADMINS
         is_super_middleman = any(role.id == HEAD_MIDDLEMAN_ROLE_ID for role in interaction.user.roles)
         can_reclaim = is_owner or is_super_admin or is_super_middleman
-        
-        is_support_ticket = ticket_info.get("type") == "support"
         
         if ticket_info["claimer"]:
             if not can_reclaim:
@@ -743,19 +757,8 @@ class TicketManagementView(discord.ui.View):
             
             previous_claimer_id = ticket_info["claimer"]
             guild = interaction.guild
-            try:
-                previous_claimer = guild.get_member(previous_claimer_id)
-                if previous_claimer and is_support_ticket:
-                    await interaction.channel.set_permissions(
-                        previous_claimer,
-                        view_channel=True,
-                        send_messages=True,
-                        add_reactions=True,
-                        create_public_threads=False,
-                        create_private_threads=False
-                    )
-            except:
-                pass
+        else:
+            guild = interaction.guild
         
         ticket_info["claimer"] = interaction.user.id
         ticket_info["claimed_at"] = datetime.utcnow().isoformat()
@@ -773,6 +776,17 @@ class TicketManagementView(discord.ui.View):
                         create_public_threads=False,
                         create_private_threads=False
                     )
+            
+            owner_role = guild.get_role(OWNER_ROLE_ID)
+            if owner_role:
+                await interaction.channel.set_permissions(
+                    owner_role,
+                    view_channel=True,
+                    send_messages=True,
+                    add_reactions=True,
+                    create_public_threads=False,
+                    create_private_threads=False
+                )
         
         await interaction.channel.set_permissions(
             interaction.user,
@@ -1290,12 +1304,26 @@ async def on_ready():
         save_message_ids(message_ids)
         print("✅ Posted games message (ONCE - will not re-upload)")
     
-    await bot.change_presence(
-        activity=discord.Activity(
-            type=discord.ActivityType.watching,
-            name="Trade Hub"
-        )
-    )
+    async def update_activity():
+        while True:
+            try:
+                guild = bot.get_guild(GUILD_ID)
+                if guild:
+                    ticket_data = load_ticket_data()
+                    total_tickets = len(ticket_data.get("user_middleman_tickets", {})) + len(ticket_data.get("user_support_tickets", {})) + len(ticket_data.get("user_buyranks_tickets", {})) + len(ticket_data.get("user_buyitems_tickets", {})) + len(ticket_data.get("user_personal_middleman_tickets", {}))
+                    
+                    await bot.change_presence(
+                        activity=discord.Activity(
+                            type=discord.ActivityType.watching,
+                            name=f"🎫 {total_tickets} tickets"
+                        )
+                    )
+            except:
+                pass
+            
+            await asyncio.sleep(0.5)
+    
+    bot.loop.create_task(update_activity())
 
 @bot.event
 async def on_member_join(member):
@@ -1316,6 +1344,9 @@ async def on_member_join(member):
     
     member_number = member.guild.member_count
     
+    welcome_images = ["welcome1.png", "welcome2.png", "welcome3.png", "welcome4.png", "welcome5.png", "welcome6.png", "welcome7.png", "welcome8.png"]
+    random_image = random.choice(welcome_images)
+    
     welcome_channel = member.guild.get_channel(WELCOME_CHANNEL_ID)
     if welcome_channel:
         welcome_embed = discord.Embed(
@@ -1331,7 +1362,11 @@ async def on_member_join(member):
         )
         welcome_embed.set_footer(text=""+FOOTER_TEXT+"")
         
-        await welcome_channel.send(f"{member.mention}", embed=welcome_embed)
+        try:
+            file = discord.File(random_image)
+            await welcome_channel.send(f"{member.mention}", embed=welcome_embed, file=file)
+        except:
+            await welcome_channel.send(f"{member.mention}", embed=welcome_embed)
     
     dm_embed = discord.Embed(
         title="Welcome to TRADING HUB (TH)!",
@@ -1342,9 +1377,86 @@ async def on_member_join(member):
     dm_embed.set_footer(text=""+FOOTER_TEXT+"")
     
     try:
-        await member.send(embed=dm_embed)
+        file = discord.File(random_image)
+        await member.send(embed=dm_embed, file=file)
     except:
-        print(f"Could not send DM to {member.name}")
+        try:
+            await member.send(embed=dm_embed)
+        except:
+            print(f"Could not send DM to {member.name}")
+    
+    try:
+        guild = member.guild
+        guildid = str(guild.id)
+        invites_before = {}
+        async for invite in guild.invites():
+            invites_before[invite.code] = invite.uses
+        
+        await asyncio.sleep(1)
+        
+        inviter = None
+        for invite in (await guild.invites()):
+            if invite.code in invites_before and invite.uses > invites_before[invite.code]:
+                inviter = invite.inviter
+                break
+        
+        if inviter:
+            if guildid not in invitetracker:
+                invitetracker[guildid] = {}
+            if str(inviter.id) not in invitetracker[guildid]:
+                invitetracker[guildid][str(inviter.id)] = {}
+            
+            member_str = str(member.id)
+            if member_str not in invitetracker[guildid][str(inviter.id)]:
+                invitetracker[guildid][str(inviter.id)][member_str] = 1
+            
+            savedata()
+            
+            log_channel_id = guildsettings.get(guildid)
+            if log_channel_id:
+                log_channel = guild.get_channel(int(log_channel_id))
+                if log_channel:
+                    total_invites = gettotalinvites(guild, inviter)
+                    embed = discord.Embed(
+                        title="📨 New Member Invited",
+                        description=f"**{member.mention}** got invited by **{inviter.mention}**\n**{inviter.mention}** now has **{total_invites}** invites",
+                        color=discord.Color.blurple()
+                    )
+                    embed.set_thumbnail(url=member.display_avatar.url)
+                    embed.set_footer(text=FOOTER_TEXT, icon_url=LOGO_URL)
+                    await log_channel.send(embed=embed)
+    except Exception as e:
+        print(f"Error tracking invite for {member.name}: {e}")
+
+@bot.event
+async def on_member_remove(member):
+    if member.guild.id != GUILD_ID:
+        return
+    
+    guildid = str(member.guild.id)
+    memberid = str(member.id)
+    
+    if guildid in invitetracker:
+        for userid in invitetracker[guildid]:
+            if memberid in invitetracker[guildid][userid]:
+                del invitetracker[guildid][userid][memberid]
+        savedata()
+    
+    try:
+        log_channel_id = guildsettings.get(guildid)
+        if log_channel_id:
+            log_channel = member.guild.get_channel(int(log_channel_id))
+            if log_channel:
+                embed = discord.Embed(
+                    title="📤 Member Left",
+                    description=f"**{member.name}** has left the server",
+                    color=discord.Color.red()
+                )
+                embed.set_thumbnail(url=member.display_avatar.url)
+                embed.set_footer(text=FOOTER_TEXT, icon_url=LOGO_URL)
+                await log_channel.send(embed=embed)
+    except:
+        pass
 
 @bot.tree.command(name="add", description="Add a user to the ticket", guild=discord.Object(id=GUILD_ID))
 @app_commands.check(is_middleman_or_above)
@@ -3715,9 +3827,10 @@ async def unclaim(ctx):
         await ctx.send("❌ Unable to verify channel category.")
         return
     
-    user_roles = [r.id for r in ctx.author.roles]
-    if not any(rid in STAFF_ROLE_IDS for rid in user_roles):
-        await ctx.send("❌ Only middleman & above can unclaim.")
+    is_owner = any(role.id == OWNER_ROLE_ID for role in ctx.author.roles)
+    is_super_admin = ctx.author.id in SUPER_ADMINS
+    if not (is_owner or is_super_admin):
+        await ctx.send("❌ Only owner & super owner can unclaim support tickets.")
         return
     
     data = load_ticket_data()
