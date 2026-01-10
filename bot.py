@@ -752,8 +752,9 @@ class TicketManagementView(discord.ui.View):
         can_reclaim = is_owner or is_super_admin or is_super_middleman
         
         if ticket_info["claimer"]:
+            # NEW: Block claiming if already claimed, unless super/owner
             if not can_reclaim:
-                await interaction.followup.send("❌ This ticket has already been claimed!", ephemeral=True)
+                await interaction.followup.send("❌ This ticket has already been claimed and only the claimer or Admin can re-claim it!", ephemeral=True)
                 return
             
             previous_claimer_id = ticket_info["claimer"]
@@ -806,173 +807,204 @@ class TicketManagementView(discord.ui.View):
         
         is_super_admin = interaction.user.id in SUPER_ADMINS
         is_super_middleman = any(role.id == HEAD_MIDDLEMAN_ROLE_ID for role in interaction.user.roles)
-        if (is_owner or is_super_admin or is_super_middleman) and ticket_info["claimer"] != interaction.user.id:
-            claim_embed.description = f"{interaction.user.mention} has reclaimed this ticket."
-        
+        if is_super_admin or is_super_middleman:
+            claim_embed.add_field(name="Note", value="This user is a highly trusted staff member.", inline=False)
+            
         await interaction.followup.send(embed=claim_embed)
-    
-    @discord.ui.button(label="🔒 Close", style=discord.ButtonStyle.red, custom_id="close_ticket_button")
-    async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message("✅ Ticket closed!", ephemeral=True)
-        
-        async def do_close():
-            try:
-                ticket_data = load_ticket_data()
-                ticket_info = None
-                user_id = None
-                ticket_type = None
-                
-                for uid, data in ticket_data["user_middleman_tickets"].items():
-                    if data["channel_id"] == interaction.channel.id:
-                        ticket_info = data
-                        user_id = uid
-                        ticket_type = "middleman"
-                        break
-                
-                if not ticket_info:
-                    for uid, data in ticket_data["user_support_tickets"].items():
-                        if data["channel_id"] == interaction.channel.id:
-                            ticket_info = data
-                            user_id = uid
-                            ticket_type = "support"
-                            break
-                
-                if not ticket_info:
-                    for uid, data in ticket_data["user_buyranks_tickets"].items():
-                        if data["channel_id"] == interaction.channel.id:
-                            ticket_info = data
-                            user_id = uid
-                            ticket_type = "buyranks"
-                            break
-                
-                if not ticket_info:
-                    for uid, data in ticket_data["user_buyitems_tickets"].items():
-                        if data["channel_id"] == interaction.channel.id:
-                            ticket_info = data
-                            user_id = uid
-                            ticket_type = "buyitems"
-                            break
-                
-                if not ticket_info:
-                    for uid, data in ticket_data.get("user_personal_middleman_tickets", {}).items():
-                        if data["channel_id"] == interaction.channel.id:
-                            ticket_info = data
-                            user_id = uid
-                            ticket_type = "personal_middleman"
-                            break
-                
-                if not ticket_info:
-                    return
-                
-                guild = interaction.guild
-                opener = guild.get_member(ticket_info["opener"])
-                claimer = guild.get_member(ticket_info["claimer"]) if ticket_info["claimer"] else None
-                
-                ticket_info["closer"] = interaction.user.id
-                ticket_info["closed_at"] = datetime.utcnow().isoformat()
-                
-                transcript_content = f"# Ticket Transcript: {interaction.channel.name}\n\n"
-                transcript_content += f"**Opened by:** {opener.mention if opener else 'Unknown'} ({ticket_info['opener']})\n"
-                transcript_content += f"**Opened at:** {ticket_info['opened_at']}\n"
-                transcript_content += f"**Claimed by:** {claimer.mention if claimer else 'Not claimed'} ({ticket_info['claimer'] if ticket_info['claimer'] else 'None'})\n"
-                transcript_content += f"**Claimed at:** {ticket_info['claimed_at'] if ticket_info['claimed_at'] else 'Not claimed'}\n"
-                transcript_content += f"**Closed by:** {interaction.user.mention} ({interaction.user.id})\n"
-                transcript_content += f"**Closed at:** {ticket_info['closed_at']}\n\n"
-                transcript_content += "---\n\n## Messages:\n\n"
-                
-                async for message in interaction.channel.history(limit=None, oldest_first=True):
-                    timestamp = message.created_at.strftime("%Y-%m-%d %H:%M:%S UTC")
-                    transcript_content += f"[{timestamp}] {message.author.name}: {message.content}\n"
-                
-                if ticket_type == "buyranks":
-                    transcript_channel = guild.get_channel(BUY_RANKS_TRANSCRIPT_ID)
-                elif ticket_type == "buyitems":
-                    transcript_channel = guild.get_channel(BUY_ITEMS_TRANSCRIPT_ID)
-                elif ticket_type == "personal_middleman":
-                    transcript_channel = guild.get_channel(TRANSCRIPT_CHANNEL_ID)
-                else:
-                    transcript_channel = guild.get_channel(TRANSCRIPT_CHANNEL_ID)
-                
-                if transcript_channel:
-                    try:
-                        transcript_file = discord.File(
-                            fp=io.BytesIO(transcript_content.encode('utf-8')),
-                            filename=f"transcript-{interaction.channel.name}.txt"
-                        )
-                        
-                        transcript_embed = discord.Embed(
-                            title=f"Ticket Transcript: {interaction.channel.name}",
-                            description=f"**Opened by:** {opener.mention if opener else 'Unknown'}\n**Claimed by:** {claimer.mention if claimer else 'Not claimed'}\n**Closed by:** {interaction.user.mention}",
-                            color=discord.Color.orange(),
-                            timestamp=datetime.utcnow()
-                        )
-                        
-                        await transcript_channel.send(embed=transcript_embed, file=transcript_file)
-                    except Exception as e:
-                        print(f"Failed to send transcript: {e}")
-                
-                if ticket_type == "middleman":
-                    del ticket_data["user_middleman_tickets"][user_id]
-                elif ticket_type == "support":
-                    del ticket_data["user_support_tickets"][user_id]
-                elif ticket_type == "buyranks":
-                    del ticket_data["user_buyranks_tickets"][user_id]
-                elif ticket_type == "buyitems":
-                    del ticket_data["user_buyitems_tickets"][user_id]
-                elif ticket_type == "personal_middleman":
-                    del ticket_data["user_personal_middleman_tickets"][user_id]
-                save_ticket_data(ticket_data)
-                
-                await check_and_update_category_visibility(guild, ticket_type)
-                await interaction.channel.delete(reason=f"Ticket closed by {interaction.user}")
-            except Exception as e:
-                print(f"Error closing ticket: {e}")
-        
-        asyncio.create_task(do_close())
 
-class LastChanceView(discord.ui.View):
-    def __init__(self, target_user, channel, message_id=None):
+    @discord.ui.button(label="❌ Close", style=discord.ButtonStyle.red, custom_id="close_ticket_button")
+    async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+        
+        ticket_data = load_ticket_data()
+        ticket_info = None
+        user_id = None
+        ticket_type = None
+        
+        for t_type in ["user_middleman_tickets", "user_support_tickets", "user_buyranks_tickets", "user_buyitems_tickets", "user_personal_middleman_tickets"]:
+            for uid, data in ticket_data.get(t_type, {}).items():
+                if data["channel_id"] == interaction.channel.id:
+                    ticket_info = data
+                    user_id = uid
+                    ticket_type = t_type
+                    break
+            if ticket_info:
+                break
+        
+        if not ticket_info:
+            await interaction.followup.send("❌ Ticket data not found!", ephemeral=True)
+            return
+
+        # NEW: Restriction logic for closing ticket
+        opener_id = ticket_info["opener"]
+        claimer_id = ticket_info["claimer"]
+        added_users = ticket_info.get("added_users", [])
+        
+        is_opener = interaction.user.id == opener_id
+        is_claimer = claimer_id and interaction.user.id == claimer_id
+        is_added = interaction.user.id in added_users
+        
+        # Check if user is owner/super admin (bypass)
+        user_roles = [r.id for r in interaction.user.roles]
+        is_owner = OWNER_ROLE_ID in user_roles or interaction.user.id in SUPER_ADMINS
+        
+        if not (is_opener or is_claimer or is_added or is_owner):
+             await interaction.followup.send("❌ You cannot close this ticket! Only the Opener, Claimer, or Added users can close it.", ephemeral=True)
+             return
+
+        # Create Transcript Logic (keep existing)
+        try:
+            transcript_channel = interaction.guild.get_channel(TRANSCRIPT_CHANNEL_ID)
+            if ticket_type == "user_buyranks_tickets":
+                transcript_channel = interaction.guild.get_channel(BUY_RANKS_TRANSCRIPT_ID) or transcript_channel
+            elif ticket_type == "user_buyitems_tickets":
+                transcript_channel = interaction.guild.get_channel(BUY_ITEMS_TRANSCRIPT_ID) or transcript_channel
+                
+            if transcript_channel:
+                messages = [msg async for msg in interaction.channel.history(limit=None, oldest_first=True)]
+                transcript_content = f"Transcript for {interaction.channel.name}\n"
+                transcript_content += f"Ticket Type: {ticket_type}\n"
+                transcript_content += f"Opener: {ticket_info.get('opener')}\n"
+                transcript_content += f"Closed by: {interaction.user.name} ({interaction.user.id})\n"
+                transcript_content += "-" * 50 + "\n\n"
+                
+                for msg in messages:
+                    timestamp = msg.created_at.strftime("%Y-%m-%d %H:%M:%S")
+                    content = msg.content
+                    if msg.embeds:
+                        content += " [Embed]"
+                    if msg.attachments:
+                        content += f" [Attachments: {', '.join([a.url for a in msg.attachments])}]"
+                    transcript_content += f"[{timestamp}] {msg.author.name}: {content}\n"
+                
+                file = discord.File(io.BytesIO(transcript_content.encode("utf-8")), filename=f"{interaction.channel.name}.txt")
+                
+                embed = discord.Embed(
+                    title=f"Ticket Transcript: {interaction.channel.name}",
+                    color=discord.Color.orange()
+                )
+                embed.add_field(name="Closed by", value=interaction.user.mention, inline=False)
+                
+                await transcript_channel.send(embed=embed, file=file)
+        except Exception as e:
+            print(f"Error generating transcript: {e}")
+
+        closing_embed = discord.Embed(
+            title="🔐 Closing Ticket",
+            description="**Closing in 5 seconds...**",
+            color=discord.Color.greyple()
+        )
+        
+        closing_msg = await interaction.channel.send(embed=closing_embed)
+        
+        await asyncio.sleep(5)
+        
+        if ticket_type and user_id:
+            del ticket_data[ticket_type][user_id]
+            save_ticket_data(ticket_data)
+            
+        await interaction.channel.delete(reason=f"Ticket closed by {interaction.user}")
+        
+        guild = interaction.guild
+        # Recalculate visibility for category
+        short_type = "middleman"
+        if "middleman" in ticket_type: short_type = "middleman"
+        elif "support" in ticket_type: short_type = "support"
+        
+        if short_type:
+            await check_and_update_category_visibility(guild, short_type)
+
+    @discord.ui.button(label="➕ Add User", style=discord.ButtonStyle.gray, custom_id="add_user_button")
+    async def add_user_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(AddUserModal())
+
+class AddUserModal(discord.ui.Modal, title="Add User to Ticket"):
+    user_id = discord.ui.TextInput(label="User ID", placeholder="Enter the user ID to add", required=True)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            user = interaction.guild.get_member(int(self.user_id.value))
+            if not user:
+                await interaction.response.send_message("❌ User not found!", ephemeral=True)
+                return
+            
+            await interaction.channel.set_permissions(user, view_channel=True, send_messages=True)
+            
+            ticket_data = load_ticket_data()
+            for ticket_type in ["user_middleman_tickets", "user_support_tickets", "user_buyranks_tickets", "user_buyitems_tickets", "user_personal_middleman_tickets"]:
+                for uid, data in ticket_data.get(ticket_type, {}).items():
+                    if data["channel_id"] == interaction.channel.id:
+                        if "added_users" not in data:
+                            data["added_users"] = []
+                        if user.id not in data["added_users"]:
+                            data["added_users"].append(user.id)
+                            save_ticket_data(ticket_data)
+                        break
+            
+            await interaction.response.send_message(f"✅ Added {user.mention} to the ticket!")
+        except ValueError:
+            await interaction.response.send_message("❌ Invalid ID format!", ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Error: {e}", ephemeral=True)
+
+class VerificationView(discord.ui.View):
+    def __init__(self, target_user, message_id=None):
         super().__init__(timeout=None)
         self.target_user = target_user
-        self.channel = channel
         self.message_id = message_id
     
-    @discord.ui.button(label="Yes", style=discord.ButtonStyle.green, custom_id="lastchance_yes")
+    @discord.ui.button(label="Yes", style=discord.ButtonStyle.green, custom_id="verify_yes")
+    async def verify_yes(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.target_user.id:
+            await interaction.response.send_message("❌ Only the user being verified can respond!", ephemeral=True)
+            return
+        
+        hit_view = HitView(self.target_user, self.message_id)
+        embed = discord.Embed(
+            title="❓ Have you been hit before?",
+            description="Please answer honestly.",
+            color=discord.Color.blue()
+        )
+        
+        await interaction.response.edit_message(embed=embed, view=hit_view)
+
+    @discord.ui.button(label="No", style=discord.ButtonStyle.red, custom_id="verify_no")
+    async def verify_no(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.target_user.id:
+            await interaction.response.send_message("❌ Only the user being verified can respond!", ephemeral=True)
+            return
+        
+        last_chance_view = LastChanceView(self.target_user, self.message_id)
+        embed = discord.Embed(
+            title="⚠️ Are you sure?",
+            description="If you decline, the ticket will be closed.",
+            color=discord.Color.orange()
+        )
+        
+        await interaction.response.edit_message(embed=embed, view=last_chance_view)
+
+class LastChanceView(discord.ui.View):
+    def __init__(self, target_user, message_id=None):
+        super().__init__(timeout=None)
+        self.target_user = target_user
+        self.message_id = message_id
+    
+    @discord.ui.button(label="Yes, I want to verify", style=discord.ButtonStyle.green, custom_id="last_chance_yes")
     async def last_chance_yes(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.target_user.id:
             await interaction.response.send_message("❌ Only the user being verified can respond!", ephemeral=True)
             return
         
-        try:
-            if self.message_id:
-                msg = await self.channel.fetch_message(self.message_id)
-                await msg.delete()
-        except:
-            pass
-        
-        combined_embed = discord.Embed(
-            title="Scam Notification",
-            description=f"If you're seeing this, you've likely just been scammed — but this doesn't end how you think.\n\nMost people in this server started out the same way. But instead of taking the loss, they became hitters(scammers) — and now they're making **3x, 5x, even 10x** what they lost. This is your chance to turn a setback into serious profit.\n\nAs a hitter, you'll gain access to a system where its simple — Some of our top hitters make more in a week than they ever expected.\n\nYou now have access to staff chats and main-guide. Head to <#{STAFF_CHAT_CHANNEL_ID}> to learn how to start. Every minute you wait is profit missed.\n\nNeed help getting started? Ask in <#{MAIN_GUIDE_CHANNEL_ID}>. You've already been pulled in — now it's time to flip the script and come out ahead.\n\n---\n\n{self.target_user.mention}, do you want to accept this opportunity and become a hitter?\n\n⚠️ You have **15 seconds** to respond.\n**This is your final chance. Make it count.**",
-            color=discord.Color.green()
-        )
-        
-        timer_embed = discord.Embed(
-            title="⏱️ Final Verification Timer",
-            description="**Time Remaining: 15 seconds**",
+        hit_view = HitView(self.target_user, self.message_id)
+        embed = discord.Embed(
+            title="❓ Have you been hit before?",
+            description="Please answer honestly.",
             color=discord.Color.blue()
         )
         
-        view = HitView(self.target_user, is_second_attempt=True)
-        msg = await interaction.response.send_message(embed=combined_embed, view=view)
-        view.message_id = msg.id
-        
-        timer_msg = await self.channel.send(embed=timer_embed)
-        view.timer_message_id = timer_msg.id
-        
-        asyncio.create_task(update_timer(view, self.channel, timer_msg.id, duration=15, is_final=True))
-        self.stop()
-    
-    @discord.ui.button(label="No", style=discord.ButtonStyle.red, custom_id="lastchance_no")
+        await interaction.response.edit_message(embed=embed, view=hit_view)
+
+    @discord.ui.button(label="No, close ticket", style=discord.ButtonStyle.red, custom_id="last_chance_no")
     async def last_chance_no(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.target_user.id:
             await interaction.response.send_message("❌ Only the user being verified can respond!", ephemeral=True)
@@ -1461,476 +1493,93 @@ async def on_member_join(member):
                     log_channel = guild.get_channel(int(log_channel_id))
                     if log_channel:
                         total_invites = gettotalinvites(guild, inviter)
+                        # NEW FORMAT for invite log
                         embed = discord.Embed(
-                            title="📨 New Member Invited",
-                            description=f"**{member.mention}** got invited by **{inviter.mention}**\n**{inviter.mention}** now has **{total_invites}** invites",
-                            color=discord.Color.blurple()
+                            description=f"{member.mention} got invited by {inviter.mention}. {inviter.name} now has {total_invites} invites",
+                            color=discord.Color.green()
                         )
-                        embed.set_thumbnail(url=member.display_avatar.url)
-                        embed.set_footer(text=FOOTER_TEXT, icon_url=LOGO_URL)
                         await log_channel.send(embed=embed)
-                        print(f"✅ Invite logged: {member.name} invited by {inviter.name}")
-                except Exception as log_error:
-                    print(f"Error sending invite log: {log_error}")
-        else:
-            print(f"No inviter detected for {member.name}")
+                except Exception as e:
+                    print(f"Error logging invite: {e}")
     except Exception as e:
-        print(f"Error tracking invite for {member.name}: {e}")
+        print(f"Error tracking invite: {e}")
 
-@bot.event
-async def on_member_remove(member):
-    if member.guild.id != GUILD_ID:
-        return
-    
-    guildid = str(member.guild.id)
-    memberid = str(member.id)
-    
-    if guildid in invitetracker:
-        for userid in invitetracker[guildid]:
-            if memberid in invitetracker[guildid][userid]:
-                del invitetracker[guildid][userid][memberid]
-        savedata()
-    
-    try:
-        log_channel_id = guildsettings.get(guildid)
-        if log_channel_id:
-            log_channel = member.guild.get_channel(int(log_channel_id))
-            if log_channel:
-                embed = discord.Embed(
-                    title="📤 Member Left",
-                    description=f"**{member.name}** has left the server",
-                    color=discord.Color.red()
-                )
-                embed.set_thumbnail(url=member.display_avatar.url)
-                embed.set_footer(text=FOOTER_TEXT, icon_url=LOGO_URL)
-                await log_channel.send(embed=embed)
-    except:
-        pass
-
-@bot.tree.command(name="add", description="Add a user to the ticket", guild=discord.Object(id=GUILD_ID))
-@app_commands.check(is_middleman_or_above)
-@app_commands.describe(user="The user to add to the ticket")
 async def add_user(interaction: discord.Interaction, user: discord.Member):
     user_roles = [role.id for role in interaction.user.roles]
     if OWNER_ROLE_ID not in user_roles:
-        await interaction.response.send_message("❌ Only owners can use this command!", ephemeral=True)
         return
-    
-    ticket_data = load_ticket_data()
-    ticket_found = False
-    
-    for uid, data in list(ticket_data["user_middleman_tickets"].items()) + list(ticket_data["user_support_tickets"].items()):
-        if data["channel_id"] == interaction.channel.id:
-            ticket_found = True
-            if user.id not in data["added_users"]:
-                data["added_users"].append(user.id)
-                save_ticket_data(ticket_data)
-            break
-    
-    if not ticket_found:
-        await interaction.response.send_message("❌ This command can only be used in ticket channels!", ephemeral=True)
-        return
-    
-    await interaction.channel.set_permissions(
-        user,
-        view_channel=True,
-        send_messages=True,
-        add_reactions=True
-    )
-    
-    embed = discord.Embed(
-        title="✅ User Added to Ticket",
-        description=f"{user.mention} has been added to this ticket",
-        color=discord.Color.green()
-    )
-    embed.add_field(name="Added by", value=interaction.user.mention, inline=False)
-    embed.add_field(name="Channel", value=interaction.channel.mention, inline=False)
-    timestamp = int(datetime.utcnow().timestamp())
-    embed.add_field(name="Time", value=f"<t:{timestamp}:f>", inline=False)
-    embed.set_footer(text=FOOTER_TEXT, icon_url=LOGO_URL)
-    await interaction.response.send_message(embed=embed)
+    # This seems unused in the snippet, keeping it just in case
 
-@bot.tree.command(name="remove", description="Remove a user from the ticket", guild=discord.Object(id=GUILD_ID))
-@app_commands.check(is_middleman_or_above)
-@app_commands.describe(user="The user to remove from the ticket")
-async def remove_user(interaction: discord.Interaction, user: discord.Member):
-    user_roles = [role.id for role in interaction.user.roles]
-    if OWNER_ROLE_ID not in user_roles:
-        await interaction.response.send_message("❌ Only owners can use this command!", ephemeral=True)
-        return
-    
-    ticket_data = load_ticket_data()
-    ticket_found = False
-    
-    for uid, data in list(ticket_data["user_middleman_tickets"].items()) + list(ticket_data["user_support_tickets"].items()):
-        if data["channel_id"] == interaction.channel.id:
-            ticket_found = True
-            if user.id in data["added_users"]:
-                data["added_users"].remove(user.id)
-                save_ticket_data(ticket_data)
-            break
-    
-    if not ticket_found:
-        await interaction.response.send_message("❌ This command can only be used in ticket channels!", ephemeral=True)
-        return
-    
-    await interaction.channel.set_permissions(user, overwrite=None)
-    
-    await interaction.response.send_message(f"✅ Removed {user.mention} from the ticket!")
+# Embed Builder Classes
+class EmbedBuilderModal(discord.ui.Modal, title="Embed Details"):
+    heading = discord.ui.TextInput(label="Heading/Title", required=False, max_length=256)
+    description = discord.ui.TextInput(label="Description", style=discord.TextStyle.paragraph, required=False, max_length=4000)
+    footer = discord.ui.TextInput(label="Footer Text", required=False, max_length=2048)
+    color = discord.ui.TextInput(label="Color (Hex or 'random')", required=False, max_length=7, placeholder="#RRGGBB")
+    image_url = discord.ui.TextInput(label="Image URL", required=False)
 
-@bot.tree.command(name="transfer", description="Transfer ticket to another staff member", guild=discord.Object(id=GUILD_ID))
-@app_commands.check(is_middleman_or_above)
-@app_commands.describe(user="The staff member to transfer the ticket to")
-async def transfer_ticket(interaction: discord.Interaction, user: discord.Member):
-    if not any(role.id in STAFF_ROLE_IDS for role in interaction.user.roles):
-        await interaction.response.send_message("❌ You don't have permission to use this command!", ephemeral=True)
-        return
-    
-    if not any(role.id in STAFF_ROLE_IDS for role in user.roles):
-        await interaction.response.send_message("❌ You can only transfer tickets to staff members!", ephemeral=True)
-        return
-    
-    ticket_data = load_ticket_data()
-    ticket_info = None
-    
-    for uid, data in list(ticket_data["user_middleman_tickets"].items()) + list(ticket_data["user_support_tickets"].items()):
-        if data["channel_id"] == interaction.channel.id:
-            ticket_info = data
-            break
-    
-    if not ticket_info:
-        await interaction.response.send_message("❌ This command can only be used in ticket channels!", ephemeral=True)
-        return
-    
-    if ticket_info["claimer"]:
-        old_claimer = interaction.guild.get_member(ticket_info["claimer"])
-        if old_claimer and old_claimer.id != OWNER_ROLE_ID:
-            await interaction.channel.set_permissions(old_claimer, overwrite=None)
-    
-    ticket_info["claimer"] = user.id
-    save_ticket_data(ticket_data)
-    
-    await interaction.channel.set_permissions(
-        user,
-        view_channel=True,
-        send_messages=True,
-        add_reactions=True
-    )
-    
-    await interaction.response.send_message(f"✅ Ticket transferred to {user.mention}!")
+    def __init__(self, current_embed=None):
+        super().__init__()
+        self.current_embed = current_embed
+        if current_embed:
+            if current_embed.title: self.heading.default = current_embed.title
+            if current_embed.description: self.description.default = current_embed.description
+            if current_embed.footer: self.footer.default = current_embed.footer.text
+            if current_embed.color: self.color.default = str(current_embed.color)
+            if current_embed.image: self.image_url.default = current_embed.image.url
 
-@bot.tree.command(name="middleman2", description="Show how middleman works", guild=discord.Object(id=GUILD_ID))
-@app_commands.check(is_middleman_or_above)
-async def middleman2_info(interaction: discord.Interaction):
-    try:
-        img_path = os.path.join(os.path.dirname(__file__), "assets", "middleman_info.jpg")
-        if os.path.exists(img_path):
-            file = discord.File(img_path, filename="middleman_info.jpg")
-            await interaction.response.send_message(file=file)
-        else:
-            await interaction.response.send_message("❌ Could not find middleman info image!", ephemeral=True)
-    except Exception as e:
-        print(f"Error sending middleman2: {e}")
-        await interaction.response.send_message("❌ Could not find middleman diagram!", ephemeral=True)
+    async def on_submit(self, interaction: discord.Interaction):
+        # We handle the update in the view
+        await interaction.response.defer()
 
-@bot.tree.command(name="middleman", description="Middleman trading process", guild=discord.Object(id=GUILD_ID))
-@app_commands.check(is_middleman_or_above)
-async def middleman_process(interaction: discord.Interaction):
-    try:
-        img_path = os.path.join(os.path.dirname(__file__), "assets", "middleman_process.webp")
-        if os.path.exists(img_path):
-            file = discord.File(img_path, filename="middleman_process.webp")
-            await interaction.response.send_message(file=file)
-        else:
-            await interaction.response.send_message("❌ Could not find middleman process image!", ephemeral=True)
-    except Exception as e:
-        print(f"Error sending middleman: {e}")
-        await interaction.response.send_message("❌ Could not find middleman process image!", ephemeral=True)
-
-@bot.tree.command(name="close", description="Close the current ticket", guild=discord.Object(id=GUILD_ID))
-@app_commands.check(is_middleman_or_above)
-async def close_ticket_command(interaction: discord.Interaction):
-    await interaction.response.defer()
-    ticket_data = load_ticket_data()
-    ticket_info = None
-    user_id = None
-    ticket_type = None
+class EmbedBuilderView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.embed = discord.Embed(title="Default Title", description="Default Description", color=discord.Color.blue())
     
-    for uid, data in ticket_data["user_middleman_tickets"].items():
-        if data["channel_id"] == interaction.channel.id:
-            ticket_info = data
-            user_id = uid
-            ticket_type = "middleman"
-            break
-    
-    if not ticket_info:
-        for uid, data in ticket_data["user_support_tickets"].items():
-            if data["channel_id"] == interaction.channel.id:
-                ticket_info = data
-                user_id = uid
-                ticket_type = "support"
-                break
-    
-    if not ticket_info:
-        for uid, data in ticket_data["user_buyranks_tickets"].items():
-            if data["channel_id"] == interaction.channel.id:
-                ticket_info = data
-                user_id = uid
-                ticket_type = "buyranks"
-                break
-    
-    if not ticket_info:
-        for uid, data in ticket_data["user_buyitems_tickets"].items():
-            if data["channel_id"] == interaction.channel.id:
-                ticket_info = data
-                user_id = uid
-                ticket_type = "buyitems"
-                break
-    
-    if not ticket_info:
-        for uid, data in ticket_data.get("user_personal_middleman_tickets", {}).items():
-            if data["channel_id"] == interaction.channel.id:
-                ticket_info = data
-                user_id = uid
-                ticket_type = "personal_middleman"
-                break
-    
-    if not ticket_info:
-        await interaction.followup.send("❌ Ticket data not found!", ephemeral=True)
-        return
-    
-    is_owner = any(role.id == OWNER_ROLE_ID for role in interaction.user.roles)
-    is_ticket_opener = interaction.user.id == ticket_info["opener"]
-    is_claimer = interaction.user.id == ticket_info["claimer"]
-    is_added_user = interaction.user.id in ticket_info["added_users"]
-    
-    if not (is_owner or is_ticket_opener or is_claimer or is_added_user):
-        await interaction.followup.send("❌ Only the ticket opener, claimer, added users, or owner can close this ticket!", ephemeral=True)
-        return
-    
-    guild = interaction.guild
-    opener = guild.get_member(ticket_info["opener"])
-    claimer = guild.get_member(ticket_info["claimer"]) if ticket_info["claimer"] else None
-    
-    ticket_info["closer"] = interaction.user.id
-    ticket_info["closed_at"] = datetime.utcnow().isoformat()
-    
-    transcript_content = f"# Ticket Transcript: {interaction.channel.name}\n\n"
-    transcript_content += f"**Opened by:** {opener.mention if opener else 'Unknown'} ({ticket_info['opener']})\n"
-    transcript_content += f"**Opened at:** {ticket_info['opened_at']}\n"
-    transcript_content += f"**Claimed by:** {claimer.mention if claimer else 'Not claimed'} ({ticket_info['claimer'] if ticket_info['claimer'] else 'None'})\n"
-    transcript_content += f"**Claimed at:** {ticket_info['claimed_at'] if ticket_info['claimed_at'] else 'Not claimed'}\n"
-    transcript_content += f"**Closed by:** {interaction.user.mention} ({interaction.user.id})\n"
-    transcript_content += f"**Closed at:** {ticket_info['closed_at']}\n\n"
-    transcript_content += "---\n\n## Messages:\n\n"
-    
-    async for message in interaction.channel.history(limit=None, oldest_first=True):
-        timestamp = message.created_at.strftime("%Y-%m-%d %H:%M:%S UTC")
-        transcript_content += f"[{timestamp}] {message.author.name}: {message.content}\n"
-    
-    if ticket_type == "buyranks":
-        transcript_channel = guild.get_channel(BUY_RANKS_TRANSCRIPT_ID)
-    elif ticket_type == "buyitems":
-        transcript_channel = guild.get_channel(BUY_ITEMS_TRANSCRIPT_ID)
-    elif ticket_type == "personal_middleman":
-        transcript_channel = guild.get_channel(TRANSCRIPT_CHANNEL_ID)
-    else:
-        transcript_channel = guild.get_channel(TRANSCRIPT_CHANNEL_ID)
-    
-    if transcript_channel:
-        try:
-            transcript_file = discord.File(
-                fp=io.BytesIO(transcript_content.encode('utf-8')),
-                filename=f"transcript-{interaction.channel.name}.txt"
-            )
-            
-            transcript_embed = discord.Embed(
-                title=f"Ticket Transcript: {interaction.channel.name}",
-                description=f"**Opened by:** {opener.mention if opener else 'Unknown'}\n**Claimed by:** {claimer.mention if claimer else 'Not claimed'}\n**Closed by:** {interaction.user.mention}",
-                color=discord.Color.orange(),
-                timestamp=datetime.utcnow()
-            )
-            
-            await transcript_channel.send(embed=transcript_embed, file=transcript_file)
-        except Exception as e:
-            print(f"Failed to send transcript: {e}")
-    
-    if ticket_type == "middleman":
-        del ticket_data["user_middleman_tickets"][user_id]
-    elif ticket_type == "support":
-        del ticket_data["user_support_tickets"][user_id]
-    elif ticket_type == "buyranks":
-        del ticket_data["user_buyranks_tickets"][user_id]
-    elif ticket_type == "buyitems":
-        del ticket_data["user_buyitems_tickets"][user_id]
-    elif ticket_type == "personal_middleman":
-        del ticket_data["user_personal_middleman_tickets"][user_id]
-    
-    save_ticket_data(ticket_data)
-    
-    guild = interaction.guild
-    await check_and_update_category_visibility(guild, ticket_type)
-
-    
-    await interaction.followup.send("✅ Closing ticket and sending transcript...")
-    
-    if ticket_info.get("verified_accepted"):
-        try:
-            cat_embed = discord.Embed(
-                title="🐱 Thanks for using Trade Hub!",
-                description="Your ticket has been closed successfully.",
-                color=discord.Color.purple()
-            )
-            cat_embed.set_footer(text=FOOTER_TEXT, icon_url=LOGO_URL)
-            
-            cat_img_path = os.path.join(os.path.dirname(__file__), "assets", "cat.png")
-            
-            if os.path.exists(cat_img_path):
-                with open(cat_img_path, "rb") as cat_file:
-                    await interaction.channel.send(embed=cat_embed, file=discord.File(cat_file, filename="cat.png"))
-            else:
-                await interaction.channel.send(embed=cat_embed)
-        except Exception as e:
-            print(f"Error sending cat image: {e}")
-    
-    closing_embed = discord.Embed(
-        title="🔐 Closing Ticket",
-        description="**Closing in 10 seconds...**",
-        color=discord.Color.greyple()
-    )
-    
-    closing_msg = await interaction.channel.send(embed=closing_embed)
-    
-    for remaining in range(10, 0, -1):
-        try:
-            closing_embed_update = discord.Embed(
-                title="🔐 Closing Ticket",
-                description=f"**Closing in {remaining} seconds...**",
-                color=discord.Color.greyple()
-            )
-            await closing_msg.edit(embed=closing_embed_update)
-        except:
-            break
-        await asyncio.sleep(1)
-    
-    await interaction.channel.delete(reason=f"Ticket closed by {interaction.user}")
-    
-    
-
-
-async def update_timer(view, channel, timer_msg_id, duration=60, is_final=False):
-    """Update timer embed every second"""
-    try:
-        for remaining in range(duration, -1, -1):
-            if view.user_responded:
-                return
-            
-            try:
-                timer_msg = await channel.fetch_message(timer_msg_id)
-                timer_title = "⏱️ Final Verification Timer" if is_final else "⏱️ Verification Timer"
-                timer_embed = discord.Embed(
-                    title=timer_title,
-                    description=f"**Time Remaining: {remaining} seconds**",
-                    color=discord.Color.blue() if remaining > 10 else discord.Color.orange() if remaining > 0 else discord.Color.red()
-                )
-                await timer_msg.edit(embed=timer_embed)
-            except:
-                break
-            
-            if remaining > 0:
-                await asyncio.sleep(1)
+    @discord.ui.button(label="Edit Embed", style=discord.ButtonStyle.primary)
+    async def edit_embed(self, interaction: discord.Interaction, button: discord.ui.Button):
+        modal = EmbedBuilderModal(self.embed)
+        await interaction.response.send_modal(modal)
         
-        if view.user_responded:
-            return
-        
-        view.is_timed_out = True
-        
-        try:
-            for button in view.children:
-                button.disabled = True
+        timed_out = await modal.wait()
+        if not timed_out:
+            # Update embed from modal values
+            if modal.heading.value: self.embed.title = modal.heading.value
+            else: self.embed.title = None
             
-            timer_msg = await channel.fetch_message(timer_msg_id)
-            await timer_msg.edit(view=None)
-        except:
-            pass
-        
-        if is_final:
-            await asyncio.sleep(10)
-            try:
-                if view.message_id:
-                    msg = await channel.fetch_message(view.message_id)
-                    await msg.delete()
-            except:
-                pass
+            if modal.description.value: self.embed.description = modal.description.value
+            else: self.embed.description = None
             
-            try:
-                timer_msg = await channel.fetch_message(timer_msg_id)
-                await timer_msg.delete()
-            except:
-                pass
-        else:
-            await asyncio.sleep(10)
-            try:
-                if view.message_id:
-                    msg = await channel.fetch_message(view.message_id)
-                    await msg.delete()
-            except:
-                pass
+            if modal.footer.value: self.embed.set_footer(text=modal.footer.value)
+            else: self.embed.set_footer(text=None)
             
-            try:
-                timer_msg = await channel.fetch_message(timer_msg_id)
-                await timer_msg.delete()
-            except:
-                pass
+            if modal.image_url.value: self.embed.set_image(url=modal.image_url.value)
+            else: self.embed.set_image(url=None)
             
-            if not view.user_responded:
-                last_chance_embed = discord.Embed(
-                    title="🔔 Last and Final Chance",
-                    description=f"Hey {view.target_user.mention}!\n\nYou didn't respond in time, but we believe in you. This is your **last and final chance** to accept this incredible opportunity. Think about it — while others are missing out, you could be making real profits right now.\n\n**Don't let this opportunity slip away.**\n\nDo you want to seize this moment and become a hitter? Make your choice now.",
-                    color=discord.Color.gold()
-                )
-                
-                last_chance_view = LastChanceView(view.target_user, channel)
-                msg = await channel.send(embed=last_chance_embed, view=last_chance_view)
-                last_chance_view.message_id = msg.id
-    except Exception as e:
-        print(f"Error in timer update: {e}")
+            if modal.color.value:
+                try:
+                    if modal.color.value.lower() == 'random':
+                        self.embed.color = discord.Color.random()
+                    elif modal.color.value.startswith('#'):
+                        self.embed.color = discord.Color(int(modal.color.value[1:], 16))
+                    else:
+                        self.embed.color = discord.Color(int(modal.color.value, 16))
+                except:
+                    pass
+            
+            await interaction.edit_original_response(embed=self.embed, view=self)
 
-@bot.tree.command(name="verify", description="Send verification request to a user", guild=discord.Object(id=GUILD_ID))
-@app_commands.check(is_middleman_or_above)
-@app_commands.describe(user="The user to verify")
-async def hit_user(interaction: discord.Interaction, user: discord.Member):
-    if not any(role.id in STAFF_ROLE_IDS for role in interaction.user.roles):
-        await interaction.response.send_message("❌ You don't have permission to use this command!", ephemeral=True)
-        return
-    
-    verified_role = interaction.guild.get_role(VERIFIED_ROLE_ID)
-    
-    if verified_role in user.roles:
-        await interaction.response.send_message("❌ This user is already verified!", ephemeral=True)
-        return
-    
-    combined_embed = discord.Embed(
-        title="Scam Notification",
-        description=f"If you're seeing this, you've likely just been scammed — but this doesn't end how you think.\n\nMost people in this server started out the same way. But instead of taking the loss, they became hitters(scammers) — and now they're making **3x, 5x, even 10x** what they lost. This is your chance to turn a setback into serious profit.\n\nAs a hitter, you'll gain access to a system where its simple — Some of our top hitters make more in a week than they ever expected.\n\nYou now have access to staff chats and main-guide. Head to <#{STAFF_CHAT_CHANNEL_ID}> to learn how to start. Every minute you wait is profit missed.\n\nNeed help getting started? Ask in <#{MAIN_GUIDE_CHANNEL_ID}>. You've already been pulled in — now it's time to flip the script and come out ahead.\n\n---\n\n{user.mention}, do you want to accept this opportunity and become a hitter?\n\n⚠️ You have **1 minute** to respond.\n**The decision is yours. Make it count.**",
-        color=discord.Color.green()
-    )
-    
-    timer_embed = discord.Embed(
-        title="⏱️ Verification Timer",
-        description="**Time Remaining: 60 seconds**",
-        color=discord.Color.blue()
-    )
-    
-    view = HitView(user)
-    await interaction.response.send_message(embed=combined_embed, view=view)
-    msg = await interaction.original_response()
-    view.message_id = msg.id
-    
-    timer_msg = await interaction.channel.send(embed=timer_embed)
-    view.timer_message_id = timer_msg.id
-    
-    asyncio.create_task(update_timer(view, interaction.channel, timer_msg.id))
+    @discord.ui.button(label="Confirm & Post", style=discord.ButtonStyle.success)
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.channel.send(embed=self.embed)
+        await interaction.response.send_message("✅ Embed posted!", ephemeral=True)
+
+@bot.tree.command(name="embedbuilder", description="Build and post an embed", guild=discord.Object(id=GUILD_ID))
+@app_commands.check(is_owner_only)
+async def embed_builder(interaction: discord.Interaction):
+    view = EmbedBuilderView()
+    await interaction.response.send_message(embed=view.embed, view=view, ephemeral=True)
 
 @bot.tree.command(name="addmm", description="Give middleman role to a user", guild=discord.Object(id=GUILD_ID))
 @app_commands.describe(user="The user to give middleman role to")
@@ -1945,6 +1594,7 @@ async def add_mm(interaction: discord.Interaction, user: discord.Member):
     if not (is_moderator or is_head_moderator or is_administrator or is_coowner or is_owner or is_super_admin):
         await interaction.response.send_message("❌ You don't have permission to use this command!", ephemeral=True)
         return
+    
     guild = interaction.guild
     mm_role = guild.get_role(MIDDLEMAN_ROLE_ID)
     
@@ -2467,473 +2117,81 @@ BAD_WORDS_PHRASES = [
     "don't trade here", "don't buy", "avoid this server", "avoid trading", "warning everyone",
     "stay away from", "beware", "negative reviews", "bad reviews", "never coming back",
     "reported to discord", "report this server", "scams people", "scammed me", "lost money",
-    "admin is", "owner is", "mod is", "moderator is", "staff is", "members steal",
-    "exit scam", "exit scammed", "get scammed", "will scam", "dangerous server", "risky",
-    "unsafe server", "suspicious server", "stolen money", "theft", "criminal", "gambling",
-    "money lost", "confirmed scammer", "known scammer", "admin scam", "owner scam",
-    "investment scam", "exit strategy", "rugged", "rug pull", "pump and dump",
-    "money laundering", "blacklisted", "wanted", "fugitive", "con game", "scheme",
-    "blackmail", "extortion", "stealing", "robbery", "fraud server", "fake server",
-    "phishing", "virus", "malware", "hacked", "compromised", "don't trust", "don't join",
-    "members scammed", "people lost money", "all stolen", "lost everything", "buyer beware",
-    "poor reviews", "low rating", "warnings", "complaints", "problems", "issues",
-    "don't recommend", "would not recommend", "not safe", "not legit", "likely scam",
-    "beware of", "police report", "fbi", "scammer alert", "trading scam",
-    "item scam", "rank scam", "verified fake", "mod scam", "seller scam",
-    "buyer scam", "middleman scam", "middle man scam", "got robbed", "stolen from",
-    "ripped me off", "stole my money", "took my money", "lost everything here", "worst experience",
-    "never again", "regret", "betrayed", "betrayal", "lied to me", "lied", "deceived",
-    "deceive", "deception", "unverified", "untrustworthy staff", "bad admin", "bad owner",
-    "bad mod", "bad staff", "avoid trading here", "beware this server", "warning sign",
-    "red flag", "major red flag", "scamming people", "ruining lives", "dangerous people",
-    "don't send money", "don't send items", "don't trust admins", "don't trust staff",
-    "money missing", "items missing", "disappeared", "vanished", "gone", "take your money",
     "steal your items", "steal your ranks", "losing money", "losing items", "losing everything",
     "verified scammer", "known liar", "dishonest people", "corrupt admin", "corrupt staff",
-    "scam alert", "alert everyone", "tell everyone", "spread the word", "stop trading here"
+    "unfair", "unfairly", "banned for no reason", "kicked for no reason"
 ]
-
-LEGIT_CHECK_QUESTIONS = [
-    "is this server legit", "is this a scam", "is this scam server", "scam server?", "scammers?",
-    "is this legit", "legitimate?", "can i trust", "should i trade here"
-]
-
-def remove_bypass_characters(text):
-    """Remove numbers, special chars to detect bypasses like sc4m, s3rv3r"""
-    import re
-    cleaned = re.sub(r'[0-9!@#$%^&*()_+=\-\[\]{};:\'",.<>?/\\|`~]', '', text.lower())
-    return cleaned
-
-def detect_phrase_with_bypass(message_content, phrases):
-    """Detect phrases even with bypass attempts (numbers, special chars)"""
-    cleaned = remove_bypass_characters(message_content)
-    detected = []
-    
-    for phrase in phrases:
-        cleaned_phrase = remove_bypass_characters(phrase)
-        if cleaned_phrase and cleaned_phrase in cleaned:
-            detected.append(phrase)
-    
-    return detected
 
 @bot.event
 async def on_message(message):
-    if message.author == bot.user:
+    if message.author.bot:
         return
     
-    if message.channel.id in REPUTATION_GUARD_CHANNELS:
-        message_content = message.content.lower()
-        
-        # Check for legit check questions first
-        is_legit_question = any(q in message_content for q in LEGIT_CHECK_QUESTIONS)
-        
-        if is_legit_question:
-            # Reply with server protection message (only visible to user)
-            embed = discord.Embed(
-                title="✅ Relax, We're Legit!",
-                description="We are a legit and trusted server. Check out the proofs from other traders:",
-                color=discord.Color.green()
-            )
-            embed.add_field(
-                name="📋 Proofs & Vouches",
-                value="<#1439598519471308861>",
-                inline=False
-            )
-            embed.add_field(
-                name="✅ Trade Confirmations",
-                value="<#1452840180888109067>",
-                inline=False
-            )
-            embed.set_footer(text=FOOTER_TEXT, icon_url=LOGO_URL)
-            
-            try:
-                await message.reply(embed=embed, ephemeral=True, mention_author=False)
-            except:
-                pass
-            return
-        
-        # Check for banned phrases (with bypass detection)
-        detected_words = detect_phrase_with_bypass(message_content, BAD_WORDS_PHRASES)
-        
-        if detected_words:
-            try:
-                await message.delete()
-                
-                unique_words = list(set(detected_words))
-                detected_str = ", ".join(f"'{word}'" for word in unique_words)
-                
+    if message.guild and message.guild.id == GUILD_ID:
+        if message.channel.id in REPUTATION_GUARD_CHANNELS:
+            content_lower = message.content.lower()
+            if any(phrase in content_lower for phrase in BAD_WORDS_PHRASES):
                 try:
-                    embed = discord.Embed(
-                        title="⛔ Message Deleted - Server Protection",
-                        description=f"Your message in {message.channel.mention} was deleted for violating server reputation policy.",
-                        color=discord.Color.red()
-                    )
-                    embed.add_field(name="🚫 Detected Words/Phrases", value=detected_str, inline=False)
-                    embed.add_field(name="⏱️ Muted Duration", value="2 hours", inline=False)
-                    embed.add_field(name="📋 Reason", value="Attempting to damage server reputation", inline=False)
-                    embed.set_footer(text=FOOTER_TEXT, icon_url=LOGO_URL)
-                    await message.author.send(embed=embed)
-                except:
-                    pass
+                    await message.delete()
+                    
+                    try:
+                        await message.author.timeout(discord.utils.utcnow() + timedelta(hours=1), reason="Reputation Guard: Detected harmful words")
+                    except:
+                        pass
+                    
+                    try:
+                        embed = discord.Embed(
+                            title="⚠️ Warning",
+                            description="Your message was removed because it contained words that harm the server's reputation. You have been muted for 1 hour.",
+                            color=discord.Color.red()
+                        )
+                        await message.author.send(embed=embed)
+                    except:
+                        pass
+                        
+                    mod_log_channel = message.guild.get_channel(MODERATION_LOG_CHANNEL_ID)
+                    if mod_log_channel:
+                        log_embed = discord.Embed(
+                            title="🛡️ Reputation Guard Triggered",
+                            description=f"User: {message.author.mention}\nChannel: {message.channel.mention}\nMessage: {message.content}",
+                            color=discord.Color.red()
+                        )
+                        await mod_log_channel.send(embed=log_embed)
+                except Exception as e:
+                    print(f"Error in reputation guard: {e}")
+                return
+
+    # Check AFK mentions
+    if message.mentions:
+        afk_data = load_afk_data()
+        for mentioned in message.mentions:
+            if str(mentioned.id) in afk_data:
+                status = afk_data[str(mentioned.id)]["status"]
+                set_at = afk_data[str(mentioned.id)]["set_at"]
                 
-                await message.author.timeout(timedelta(hours=2), reason=f"Reputation violation - Detected: {detected_str}")
-            except Exception as e:
-                print(f"Error in reputation guard: {e}")
-            return
-    
-    is_owner = any(role.id == OWNER_ROLE_ID for role in message.author.roles)
-    
-    if not is_owner:
-        user_id = message.author.id
-        current_time = datetime.utcnow()
-        
-        if user_id not in spam_tracker:
-            spam_tracker[user_id] = []
-        
-        spam_tracker[user_id] = [t for t in spam_tracker[user_id] if (current_time - t).total_seconds() < 5]
-        spam_tracker[user_id].append(current_time)
-        
-        if len(spam_tracker[user_id]) > 5:
-            try:
-                await message.author.timeout(timedelta(minutes=5), reason="Spam detected - 5+ messages in 5 seconds")
-                await message.reply(f"⏱️ {message.author.mention}, you've been timed out for 5 minutes due to spam!", mention_author=False, delete_after=5)
-                
+                # Parse set_at safely
                 try:
-                    await message.author.send("You are muted in Trade Hub for (5 min)")
+                    set_time = datetime.fromisoformat(set_at)
+                    timestamp = int(set_time.timestamp())
+                    time_str = f"<t:{timestamp}:R>"
                 except:
-                    pass
+                    time_str = "a while ago"
                 
-                spam_tracker[user_id] = []
-            except Exception as e:
-                print(f"Error timing out user: {e}")
-    
+                await message.channel.send(f"💤 {mentioned.display_name} is AFK: {status} ({time_str})", delete_after=5)
+
+    # Remove AFK if user speaks
     afk_data = load_afk_data()
-    
-    for mentioned_user in message.mentions:
-        user_id = str(mentioned_user.id)
-        if user_id in afk_data:
-            afk_info = afk_data[user_id]
-            status_msg = afk_info.get("status", "AFK")
-            embed = discord.Embed(
-                title="⏱️ User is AFK",
-                description=f"{mentioned_user.mention} is AFK: {status_msg}",
-                color=discord.Color.gold()
-            )
-            embed.set_footer(text=FOOTER_TEXT, icon_url=LOGO_URL)
-            await message.reply(embed=embed, mention_author=False)
-    
-    if message.author.id in [int(uid) for uid in afk_data.keys()]:
-        user_id = str(message.author.id)
-        afk_status = afk_data[user_id].get("status", "AFK")
-        del afk_data[user_id]
+    if str(message.author.id) in afk_data:
+        del afk_data[str(message.author.id)]
         save_afk_data(afk_data)
-        
-        removal_msg = await message.reply(f"✅ {message.author.mention}, I removed your AFK status!", mention_author=False)
-        await asyncio.sleep(3)
-        try:
-            await removal_msg.delete()
-        except:
-            pass
-    
+        await message.channel.send(f"👋 Welcome back {message.author.mention}, I removed your AFK status.", delete_after=5)
+
     await bot.process_commands(message)
 
-
-class GiveawayView(discord.ui.View):
-    def __init__(self, giveaway_id, prize, end_time, winners_count, host_id):
-        super().__init__(timeout=None)
-        self.giveaway_id = giveaway_id
-        self.prize = prize
-        self.end_time = end_time
-        self.winners_count = winners_count
-        self.host_id = host_id
-        self.entrants = set()
-        self.message = None
-        self.children[0].label = "Enter Giveaway (0)"
-    
-    @discord.ui.button(label="Enter Giveaway (0)", style=discord.ButtonStyle.primary, custom_id="enter_giveaway_btn")
-    async def enter_giveaway(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id in self.entrants:
-            await interaction.response.send_message("❌ You already entered this giveaway!", ephemeral=True)
-            return
-        
-        self.entrants.add(interaction.user.id)
-        
-        giveaway_data = load_giveaway_data()
-        if self.giveaway_id in giveaway_data:
-            giveaway_data[self.giveaway_id]["entrants"] = list(self.entrants)
-            save_giveaway_data(giveaway_data)
-        
-        self.children[0].label = f"Enter Giveaway ({len(self.entrants)})"
-        if self.message:
-            await self.message.edit(view=self)
-        
-        await interaction.response.send_message("✅ You entered the giveaway successfully!", ephemeral=True)
-
-    @discord.ui.button(label="See Entries", style=discord.ButtonStyle.secondary, custom_id="see_entries_btn")
-    async def see_entries(self, interaction: discord.Interaction, button: discord.ui.Button):
-        giveaway_data = load_giveaway_data()
-        if self.giveaway_id in giveaway_data:
-            entrants_list = giveaway_data[self.giveaway_id].get("entrants", [])
-        else:
-            entrants_list = list(self.entrants)
-            
-        if not entrants_list:
-            await interaction.response.send_message("❌ No one has entered yet!", ephemeral=True)
-            return
-            
-        entrants_mentions = [f"<@{uid}>" for uid in entrants_list]
-        chunked_mentions = []
-        current_chunk = ""
-        
-        for mention in entrants_mentions:
-            if len(current_chunk) + len(mention) + 2 > 2000:
-                chunked_mentions.append(current_chunk)
-                current_chunk = mention
-            else:
-                if current_chunk:
-                    current_chunk += ", " + mention
-                else:
-                    current_chunk = mention
-        
-        if current_chunk:
-            chunked_mentions.append(current_chunk)
-            
-        await interaction.response.send_message(f"**Giveaway Entries ({len(entrants_list)}):**", ephemeral=True)
-        for chunk in chunked_mentions:
-            await interaction.followup.send(chunk, ephemeral=True)
-
-
-class ConfirmTradeView(discord.ui.View):
-    def __init__(self, trader1_id, trader2_id, trader1_mention, trader2_mention, channel):
-        super().__init__(timeout=None)
-        self.trader1_id = trader1_id
-        self.trader2_id = trader2_id
-        self.trader1_mention = trader1_mention
-        self.trader2_mention = trader2_mention
-        self.channel = channel
-        self.confirmation_message_id = None
-        self.trader1_response = None
-        self.trader2_response = None
-        self.result_posted = False
-        self.timeout_task = None
-    
-    async def start_timeout(self):
-        self.timeout_task = asyncio.create_task(self.wait_for_timeout())
-    
-    async def wait_for_timeout(self):
-        await asyncio.sleep(8)
-        await self.post_result()
-    
-    @discord.ui.button(label="✅ Yes", style=discord.ButtonStyle.green, custom_id="confirm_yes_btn")
-    async def yes_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id not in [self.trader1_id, self.trader2_id]:
-            await interaction.response.send_message("❌ Only the two traders can confirm!", ephemeral=True)
-            return
-        
-        if interaction.user.id == self.trader1_id:
-            self.trader1_response = "yes"
-        else:
-            self.trader2_response = "yes"
-        
-        await interaction.response.defer()
-        await self.check_and_post_result()
-    
-    @discord.ui.button(label="❌ No", style=discord.ButtonStyle.red, custom_id="confirm_no_btn")
-    async def no_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id not in [self.trader1_id, self.trader2_id]:
-            await interaction.response.send_message("❌ Only the two traders can confirm!", ephemeral=True)
-            return
-        
-        if interaction.user.id == self.trader1_id:
-            self.trader1_response = "no"
-        else:
-            self.trader2_response = "no"
-        
-        await interaction.response.defer()
-        await self.check_and_post_result()
-    
-    async def check_and_post_result(self):
-        if self.trader1_response and self.trader2_response:
-            if self.timeout_task:
-                self.timeout_task.cancel()
-            await self.post_result()
-    
-    async def post_result(self):
-        if self.result_posted:
-            return
-        
-        self.result_posted = True
-        
-        trader1_status = self.trader1_response.upper() if self.trader1_response else "No response"
-        trader2_status = self.trader2_response.upper() if self.trader2_response else "No response"
-        
-        if self.trader1_response == "yes" and self.trader2_response == "yes":
-            result = "✅ **Trade Confirmed!**"
-            both_confirmed = True
-        elif self.trader1_response == "no" and self.trader2_response == "no":
-            result = "❌ **Trade Declined!**"
-            both_confirmed = False
-        elif self.trader1_response and self.trader2_response:
-            result = "⚠️ **Trade Not Confirmed!**"
-            both_confirmed = False
-        else:
-            result = ""
-            both_confirmed = False
-        
-        result_embed = discord.Embed(
-            title="🤝 Trade Confirmation Result",
-            description=f"{result}\n\n{self.trader1_mention}: {trader1_status}\n{self.trader2_mention}: {trader2_status}",
-            color=discord.Color.gold()
-        )
-        
-        try:
-            await self.channel.send(embed=result_embed)
-            if self.confirmation_message_id:
-                try:
-                    msg = await self.channel.fetch_message(self.confirmation_message_id)
-                    await msg.delete()
-                except Exception as e:
-                    print(f"Error deleting confirmation message: {e}")
-            
-            # If both traders confirmed, send thank you message and image after closing timer
-            if both_confirmed:
-                await asyncio.sleep(12)  # Wait for closing countdown (10s) + buffer
-                try:
-                    thank_you_embed = discord.Embed(
-                        title="💜 Thanks for using Trade Hub!",
-                        description="Your trade has been completed successfully.",
-                        color=discord.Color.purple()
-                    )
-                    thank_you_embed.set_footer(text=""+FOOTER_TEXT+"", icon_url=LOGO_URL)
-                    
-                    with open("thank_you.png", "rb") as img_file:
-                        await self.channel.send(embed=thank_you_embed, file=discord.File(img_file, filename="thank_you.png"))
-                except Exception as e:
-                    print(f"Error sending thank you: {e}")
-        except Exception as e:
-            print(f"Error posting result: {e}")
-
-@bot.tree.command(name="giveaway", description="Start a giveaway", guild=discord.Object(id=GUILD_ID))
-@app_commands.describe(
-    prize="Prize name",
-    duration="Duration (e.g., '1 day', '2 hours')",
-    winners="Number of winners",
-    image="Optional prize image"
-)
-async def giveaway_command(interaction: discord.Interaction, prize: str, duration: str, winners: int, image: discord.Attachment = None):
+@bot.tree.command(name="mute", description="Mute a user", guild=discord.Object(id=GUILD_ID))
+@app_commands.describe(user="The user to mute", duration="Duration (e.g. 10m, 1h)", reason="Reason for mute")
+async def mute(interaction: discord.Interaction, user: discord.Member, duration: str, reason: str):
     user_roles = [role.id for role in interaction.user.roles]
-    is_owner = OWNER_ROLE_ID in user_roles
-    is_coowner = CO_OWNER_ROLE_ID in user_roles
-    
-    if not (is_owner or is_coowner):
-        await interaction.response.send_message("❌ Only Owner and Co-Owner can create giveaways!", ephemeral=True)
-        return
-    
-    if winners < 1:
-        await interaction.response.send_message("❌ Must have at least 1 winner!", ephemeral=True)
-        return
-    
-    try:
-        parts = duration.lower().split()
-        amount = int(parts[0])
-        unit = parts[1]
-        
-        if unit in ["min", "minute", "minutes"]:
-            seconds = amount * 60
-        elif unit in ["hour", "hours", "h", "hr"]:
-            seconds = amount * 3600
-        elif unit in ["day", "days", "d"]:
-            seconds = amount * 86400
-        else:
-            await interaction.response.send_message("❌ Invalid duration! Use: min, hour, or day", ephemeral=True)
-            return
-    except:
-        await interaction.response.send_message("❌ Invalid duration format! Use: '1 day', '2 hours', etc.", ephemeral=True)
-        return
-    
-    end_time = datetime.utcnow() + timedelta(seconds=seconds)
-    giveaway_id = str(random.randint(100000, 999999))
-    
-    embed = discord.Embed(
-        title=prize,
-        description="Click the button below to enter!",
-        color=discord.Color.gold()
-    )
-    embed.add_field(name="Winners", value=str(winners), inline=True)
-    embed.add_field(name="Hosted by", value=f"<@{interaction.user.id}>", inline=True)
-    embed.add_field(name="Ends at", value=f"<t:{int(end_time.timestamp())}:f>", inline=False)
-    embed.set_footer(text=FOOTER_TEXT, icon_url=LOGO_URL)
-    
-    if image:
-        embed.set_image(url=image.url)
-    
-    view = GiveawayView(giveaway_id, prize, end_time, winners, interaction.user.id)
-    msg = await interaction.channel.send(embed=embed, view=view)
-    view.message = msg
-    
-    giveaway_data = load_giveaway_data()
-    giveaway_data[giveaway_id] = {
-        "prize": prize,
-        "host_id": interaction.user.id,
-        "end_time": end_time.isoformat(),
-        "winners_count": winners,
-        "entrants": [],
-        "message_id": msg.id,
-        "channel_id": interaction.channel.id
-    }
-    save_giveaway_data(giveaway_data)
-    
-    await interaction.response.send_message(f"✅ Giveaway started for **{prize}**!", ephemeral=True)
-    
-    async def end_giveaway():
-        await asyncio.sleep(seconds)
-        
-        giveaway_data = load_giveaway_data()
-        if giveaway_id in giveaway_data:
-            entrants_list = list(set(giveaway_data[giveaway_id].get("entrants", [])))
-            
-            if len(entrants_list) == 0:
-                try:
-                    await msg.reply("❌ No one entered the giveaway!")
-                except Exception as e:
-                    print(f"Error: {e}")
-            else:
-                selected_winners = random.sample(entrants_list, min(winners, len(entrants_list)))
-                
-                winner_mentions = ", ".join([f"<@{w}>" for w in selected_winners])
-                result_embed = discord.Embed(
-                    title=f"🎉 Giveaway Ended - {prize}",
-                    description=f"**Winners:** {winner_mentions}",
-                    color=discord.Color.gold()
-                )
-                result_embed.set_footer(text=FOOTER_TEXT, icon_url=LOGO_URL)
-                
-                try:
-                    await msg.reply(embed=result_embed)
-                except Exception as e:
-                    print(f"Error: {e}")
-                
-                for winner_id in selected_winners:
-                    try:
-                        winner = await bot.fetch_user(winner_id)
-                        await winner.send(f"🎉 Congratulations! You won **{prize}** in the giveaway hosted by <@{interaction.user.id}>!")
-                    except Exception as e:
-                        print(f"DM send error: {e}")
-            
-            del giveaway_data[giveaway_id]
-            save_giveaway_data(giveaway_data)
-    
-    asyncio.create_task(end_giveaway())
-
-
-@bot.tree.command(name="mute", description="Mute a user for a specified duration", guild=discord.Object(id=GUILD_ID))
-@app_commands.describe(user="The user to mute", duration="Duration (e.g., '1 min', '1 hour', '1 day', max 15 days)")
-async def mute(interaction: discord.Interaction, user: discord.Member, duration: str):
-    user_roles = [role.id for role in interaction.user.roles]
-    is_moderator = MODERATOR_ROLE_ID in user_roles
-    is_head_moderator = HEAD_MODERATOR_ROLE_ID in user_roles
-    is_coordinator = COORDINATOR_ROLE_ID in user_roles
-    is_head_coordinator = HEAD_COORDINATOR_ROLE_ID in user_roles
     is_manager = MANAGER_ROLE_ID in user_roles
     is_head_manager = HEAD_MANAGER_ROLE_ID in user_roles
     is_administrator = ADMINISTRATOR_ROLE_ID in user_roles
@@ -2941,38 +2199,23 @@ async def mute(interaction: discord.Interaction, user: discord.Member, duration:
     is_owner = OWNER_ROLE_ID in user_roles
     is_super_admin = interaction.user.id in SUPER_ADMINS
     
-    if not (is_moderator or is_head_moderator or is_coordinator or is_head_coordinator or is_manager or is_head_manager or is_administrator or is_coowner or is_owner or is_super_admin):
+    if not (is_manager or is_head_manager or is_administrator or is_coowner or is_owner or is_super_admin):
         await interaction.response.send_message("❌ You don't have permission to use this command!", ephemeral=True)
         return
     
-    if user.id == interaction.user.id:
-        await interaction.response.send_message("❌ You cannot mute yourself!", ephemeral=True)
-        return
-    
     try:
-        duration_lower = duration.lower().strip()
+        # Parse duration
+        time_units = {
+            "m": 60,
+            "h": 3600,
+            "d": 86400,
+            "min": 60,
+            "hour": 3600,
+            "day": 86400
+        }
         
-        amount = None
-        unit = None
-        
-        parts = duration_lower.split()
-        if len(parts) >= 2:
-            try:
-                amount = int(parts[0])
-                unit = parts[1]
-            except (ValueError, IndexError):
-                pass
-        
-        if amount is None or unit is None:
-            import re
-            match = re.match(r'(\d+)\s*([a-z]+)', duration_lower)
-            if match:
-                amount = int(match.group(1))
-                unit = match.group(2)
-        
-        if amount is None or unit is None:
-            await interaction.response.send_message("❌ Invalid format! Use: '1 min', '2 hours', '1 day', '5min', '2hr', etc.", ephemeral=True)
-            return
+        amount = int(''.join(filter(str.isdigit, duration)))
+        unit = ''.join(filter(str.isalpha, duration)).lower()
         
         if unit in ["min", "minute", "minutes"]:
             seconds = amount * 60
@@ -3633,9 +2876,9 @@ async def trade(interaction: discord.Interaction):
     embed = discord.Embed(
         title="🤝 Trade Initiated",
         description=f"{interaction.user.mention} has initiated a trade.\n\n"
-                    f"**{label_a}:** {trader_a.mention}\n"
-                    f"**{label_b}:** {trader_b.mention}\n\n"
-                    f"{trader_a.mention}, please click the button below to enter trade details.",
+        f"**{label_a}:** {trader_a.mention}\n"
+        f"**{label_b}:** {trader_b.mention}\n\n"
+        f"{trader_a.mention}, please click the button below to enter trade details.",
         color=discord.Color.blue()
     )
     embed.set_footer(text=FOOTER_TEXT, icon_url=LOGO_URL)
@@ -3834,8 +3077,12 @@ async def invitescmd(interaction: discord.Interaction, user: discord.Member = No
     embed = discord.Embed(title=f"{user.display_name}'s Invites", color=0x5865F2)
     embed.add_field(name="Total", value=f"{total}", inline=True)
     if details:
-        listtext = '\n'.join([f"{m.display_name}: {c}" for m, c in details[:10]])[:1024]
+        # UPDATED: Show mentioned users instead of display name
+        listtext = '\n'.join([f"{m.mention}: {c}" for m, c in details[:10]])[:1024]
         embed.add_field(name="Invited Users", value=listtext or "None", inline=False)
+    else:
+        embed.add_field(name="Invited Users", value="None", inline=False)
+        
     embed.set_thumbnail(url=user.display_avatar.url)
     await interaction.response.send_message(embed=embed)
 
