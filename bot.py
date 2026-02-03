@@ -3643,9 +3643,9 @@ async def trade(interaction: discord.Interaction):
     view = TradeView(trader_a, trader_b, label_a, label_b)
     await interaction.response.send_message(f"{trader_a.mention}", embed=embed, view=view)
 
-LEGIT_CHECK_CHANNEL = 1452839052738039919
-PROOF_CHANNEL = 1452840053125546194
-THANK_YOU_CHANNEL = 1452840180888109067
+LEGIT_CHECK_CHANNEL = 1468226240451182713
+PROOF_CHANNEL = 1468226282608398549
+THANK_YOU_CHANNEL = 1468226259170361395
 
 @bot.tree.command(name="legit_check", description="Post a legit check message with auto-reactions", guild=discord.Object(id=GUILD_ID))
 @app_commands.check(is_owner_only)
@@ -3793,7 +3793,7 @@ async def remove_verified(interaction: discord.Interaction, user: discord.Member
 async def vouches(interaction: discord.Interaction, user: discord.Member):
     await interaction.response.defer()
     
-    VOUCHES_CHANNEL_ID = 1439598519471308861
+    VOUCHES_CHANNEL_ID = 1468227282970874018
     vouch_channel = interaction.guild.get_channel(VOUCHES_CHANNEL_ID)
     
     if not vouch_channel:
