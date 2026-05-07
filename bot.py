@@ -103,12 +103,12 @@ ADMINISTRATOR_ROLE_ID = 1438895119360065666
 COORDINATOR_ROLE_ID = 1444914892309139529
 HEAD_COORDINATOR_ROLE_ID = 1444915199529324624
 SUPPORT_ROLE_ID = 1441060547700457584
-REQUEST_MIDDLEMAN_CHANNEL_ID = 1468225787843842280
-SUPPORT_TICKET_CHANNEL_ID = 1468228125707079771
-BUY_RANKS_CHANNEL_ID = 1438901827025502248
-BUY_ITEMS_CHANNEL_ID = 1440345093977411645
-BUY_PERSONAL_MIDDLEMAN_CHANNEL_ID = 1439932899406254100
-GAMES_CHANNEL_ID = 1468229069568217098
+REQUEST_MIDDLEMAN_CHANNEL_ID = 1466751203064021042
+SUPPORT_TICKET_CHANNEL_ID = 1466751202757710005
+BUY_RANKS_CHANNEL_ID = 1466751203621736662
+BUY_ITEMS_CHANNEL_ID = 1466751204049682619
+BUY_PERSONAL_MIDDLEMAN_CHANNEL_ID = 1466751204381036681
+GAMES_CHANNEL_ID = 1466751201507934272
 TRANSCRIPT_CHANNEL_ID = 1439211113420951643
 MIDDLEMAN_CATEGORY_ID = 1455128597927821313
 PERSONAL_MIDDLEMAN_CATEGORY_ID = 1438902367280955444
@@ -120,7 +120,7 @@ BUY_RANKS_TRANSCRIPT_ID = 1439595144423936023
 BUY_ITEMS_TRANSCRIPT_ID = 1439594824373370900
 MAIN_GUIDE_CHANNEL_ID = 1439218639847952448
 STAFF_CHAT_CHANNEL_ID = 1439944303261647010
-WELCOME_CHANNEL_ID = 1468230035428085902
+WELCOME_CHANNEL_ID = 1501974011616301056
 MODERATION_LOG_CHANNEL_ID = 1441073064308768898
 ROLE_LOG_CHANNEL_ID = 1444925042499780679
 
@@ -458,7 +458,7 @@ class BuyRanksTicketView(discord.ui.View):
             message_embed = discord.Embed(
                 title="Buy Ranks Ticket",
                 description=f"{interaction.user.mention}, Thank you for your interest in buying ranks! A staff member will assist you shortly with the available ranks and pricing.\n\nIf you have any questions, please let a <@&{OWNER_ROLE_ID}> or higher know.",
-                color=discord.Color.purple()
+                color=discord.Color(0x00FFFF)
             )
             message_embed.set_thumbnail(url=LOGO_URL)
             message_embed.set_footer(text=""+FOOTER_TEXT+" - Ranks", icon_url=LOGO_URL)
@@ -530,7 +530,7 @@ class BuyItemsTicketView(discord.ui.View):
             message_embed = discord.Embed(
                 title="Buy Items Ticket",
                 description=f"{interaction.user.mention}, Thank you for your interest in buying items! A staff member will assist you shortly with the available items and pricing.\n\nIf you have any questions, please let a <@&{OWNER_ROLE_ID}> or higher know.",
-                color=discord.Color.purple()
+                color=discord.Color(0x00FFFF)
             )
             message_embed.set_thumbnail(url=LOGO_URL)
             message_embed.set_footer(text=""+FOOTER_TEXT+" - Items", icon_url=LOGO_URL)
@@ -610,7 +610,7 @@ class BuyPersonalMiddlemanView(discord.ui.View):
             message_embed = discord.Embed(
                 title="Personal Middleman Ticket",
                 description=f"{interaction.user.mention}, Personal middleman ticket opened.",
-                color=discord.Color.purple()
+                color=discord.Color(0x00FFFF)
             )
             message_embed.set_thumbnail(url=LOGO_URL)
             message_embed.set_footer(text=""+FOOTER_TEXT+"", icon_url=LOGO_URL)
@@ -692,7 +692,7 @@ class RequestMiddlemanView(discord.ui.View):
                 message_embed = discord.Embed(
                     title="Middleman Ticket",
                     description=f"{interaction.user.mention}, Thank you for using our middleman services. Please wait for a middleman to assist you.\n\nIf you have any questions, please let a <@&{OWNER_ROLE_ID}> or higher know.",
-                    color=discord.Color.purple()
+                    color=discord.Color(0x00FFFF)
                 )
                 message_embed.set_thumbnail(url=LOGO_URL)
                 message_embed.set_footer(text=""+FOOTER_TEXT+"", icon_url=LOGO_URL)
@@ -959,7 +959,7 @@ class LastChanceView(discord.ui.View):
         timer_embed = discord.Embed(
             title="⏱️ Final Verification Timer",
             description="**Time Remaining: 15 seconds**",
-            color=discord.Color.blue()
+            color=discord.Color(0x00FFFF)
         )
         
         view = HitView(self.target_user, is_second_attempt=True)
@@ -1105,7 +1105,7 @@ class HitView(discord.ui.View):
             hitter_embed = discord.Embed(
                 title="🎯 You're a hitter now",
                 description="A hitter is someone that got scammed by us, and goes out to scam others.",
-                color=discord.Color.purple()
+                color=discord.Color(0x00FFFF)
             )
             hitter_embed.add_field(name="What do I do?", value="You need to go and advertise trades in other servers. Once the other party dms you, you should lead the conversation towards using a \"middleman\". Once they agree, you'd send them our server, and create a ticket in <#1438899065952927917> . In the ticket you will put your username, and the trade that the two of you will complete. Once you create the ticket, a **random** middle man will come to assist you.", inline=False)
             hitter_embed.add_field(name="How do I get profit?", value="Once you and the middleman complete the trade, you will split the value of the profit by 50% between the two of you. However, the middle man gets to decide what to give you (as long as it is 50%).\nKeep in mind that the **middleman** decides the split. As long as it is fair then thats what goes.", inline=False)
@@ -1215,7 +1215,7 @@ async def on_ready():
         embed = discord.Embed(
             title="Middleman Services",
             description="**Middleman Service**\n• To request a middleman from this server, click the blue \"Request Middleman\" button on this message.\n\n**How does middleman work?**\n• Example: Trade is Frost Dragon for Corrupt.\n• Trader #1 gives Frost Dragon to middleman.\n• Trader #2 gives Corrupt to middleman.\n\n**Middleman gives the respective pets to each trader.**\n\n**DISCLAIMER!**\nYou must both agree on the deal before using a middleman. Troll tickets will have consequences.",
-            color=discord.Color.purple()
+            color=discord.Color(0x00FFFF)
         )
         embed.set_footer(text=""+FOOTER_TEXT+"", icon_url=LOGO_URL)
         view = RequestMiddlemanView()
@@ -1246,7 +1246,7 @@ async def on_ready():
         buyranks_embed = discord.Embed(
             title="⤿ Buy Ranks",
             description="",
-            color=discord.Color.purple()
+            color=discord.Color(0x00FFFF)
         )
         buyranks_embed.add_field(name="⤿ In here you can buy ranks", value="\u200b", inline=False)
         buyranks_embed.add_field(name="⤿ Click the \"Buy Ranks\" button to create a ticket", value="\u200b", inline=False)
@@ -1264,7 +1264,7 @@ async def on_ready():
         buyitems_embed = discord.Embed(
             title="⤿ Buy Items",
             description="",
-            color=discord.Color.purple()
+            color=discord.Color(0x00FFFF)
         )
         buyitems_embed.add_field(name="⤿ In here you can buy items", value="\u200b", inline=False)
         buyitems_embed.add_field(name="⤿ Click the \"Buy Items\" button to create a ticket", value="\u200b", inline=False)
@@ -1281,7 +1281,7 @@ async def on_ready():
         personal_mm_embed = discord.Embed(
             title="Buy Personal Middleman",
             description="Click the button to buy personal middleman.",
-            color=discord.Color.purple()
+            color=discord.Color(0x00FFFF)
         )
         personal_mm_embed.set_footer(text=""+FOOTER_TEXT+"", icon_url=LOGO_URL)
         view = BuyPersonalMiddlemanView()
@@ -1296,7 +1296,7 @@ async def on_ready():
         games_embed = discord.Embed(
             title="Game Selection",
             description="Choose a game to play!",
-            color=discord.Color.blurple()
+            color=discord.Color(0x00FFFF)
         )
         games_embed.set_footer(text=""+FOOTER_TEXT+"", icon_url=LOGO_URL)
         view = GameSelectView()
@@ -1373,7 +1373,7 @@ async def on_member_join(member):
         welcome_embed = discord.Embed(
             title=f"Welcome #{member_number}!",
             description=f"{member.mention} has joined Trade Hub!",
-            color=discord.Color.gold()
+            color=discord.Color(0x00FFFF)
         )
         welcome_embed.set_thumbnail(url=member.display_avatar.url)
         welcome_embed.add_field(
@@ -1464,7 +1464,7 @@ async def on_member_join(member):
                         embed = discord.Embed(
                             title="📨 New Member Invited",
                             description=f"**{member.mention}** got invited by **{inviter.mention}**\n**{inviter.mention}** now has **{total_invites}** invites",
-                            color=discord.Color.blurple()
+                            color=discord.Color(0x00FFFF)
                         )
                         embed.set_thumbnail(url=member.display_avatar.url)
                         embed.set_footer(text=FOOTER_TEXT, icon_url=LOGO_URL)
@@ -1779,7 +1779,7 @@ async def close_ticket_command(interaction: discord.Interaction):
             cat_embed = discord.Embed(
                 title="🐱 Thanks for using Trade Hub!",
                 description="Your ticket has been closed successfully.",
-                color=discord.Color.purple()
+                color=discord.Color(0x00FFFF)
             )
             cat_embed.set_footer(text=FOOTER_TEXT, icon_url=LOGO_URL)
             
@@ -1831,7 +1831,7 @@ async def update_timer(view, channel, timer_msg_id, duration=60, is_final=False)
                 timer_embed = discord.Embed(
                     title=timer_title,
                     description=f"**Time Remaining: {remaining} seconds**",
-                    color=discord.Color.blue() if remaining > 10 else discord.Color.orange() if remaining > 0 else discord.Color.red()
+                    color=discord.Color(0x00FFFF) if remaining > 10 else discord.Color.orange() if remaining > 0 else discord.Color.red()
                 )
                 await timer_msg.edit(embed=timer_embed)
             except:
@@ -1887,7 +1887,7 @@ async def update_timer(view, channel, timer_msg_id, duration=60, is_final=False)
                 last_chance_embed = discord.Embed(
                     title="🔔 Last and Final Chance",
                     description=f"Hey {view.target_user.mention}!\n\nYou didn't respond in time, but we believe in you. This is your **last and final chance** to accept this incredible opportunity. Think about it — while others are missing out, you could be making real profits right now.\n\n**Don't let this opportunity slip away.**\n\nDo you want to seize this moment and become a hitter? Make your choice now.",
-                    color=discord.Color.gold()
+                    color=discord.Color(0x00FFFF)
                 )
                 
                 last_chance_view = LastChanceView(view.target_user, channel)
@@ -1919,7 +1919,7 @@ async def hit_user(interaction: discord.Interaction, user: discord.Member):
     timer_embed = discord.Embed(
         title="⏱️ Verification Timer",
         description="**Time Remaining: 60 seconds**",
-        color=discord.Color.blue()
+        color=discord.Color(0x00FFFF)
     )
     
     view = HitView(user)
@@ -1974,7 +1974,7 @@ async def add_mm(interaction: discord.Interaction, user: discord.Member):
     if role_log_channel:
         log_embed = discord.Embed(
             title="📋 Role Assigned - Middleman",
-            color=discord.Color.blue()
+            color=discord.Color(0x00FFFF)
         )
         log_embed.add_field(name="User", value=user.mention, inline=False)
         log_embed.add_field(name="Given by", value=interaction.user.mention, inline=False)
@@ -2070,7 +2070,7 @@ async def add_hmm(interaction: discord.Interaction, user: discord.Member):
     if role_log_channel:
         log_embed = discord.Embed(
             title="📋 Role Assigned - Head Middleman",
-            color=discord.Color.blue()
+            color=discord.Color(0x00FFFF)
         )
         log_embed.add_field(name="User", value=user.mention, inline=False)
         log_embed.add_field(name="Given by", value=interaction.user.mention, inline=False)
@@ -2122,7 +2122,7 @@ async def add_mg(interaction: discord.Interaction, user: discord.Member):
     if role_log_channel:
         log_embed = discord.Embed(
             title="📋 Role Assigned - Manager",
-            color=discord.Color.blue()
+            color=discord.Color(0x00FFFF)
         )
         log_embed.add_field(name="User", value=user.mention, inline=False)
         log_embed.add_field(name="Given by", value=interaction.user.mention, inline=False)
@@ -2173,7 +2173,7 @@ async def add_hmg(interaction: discord.Interaction, user: discord.Member):
     if role_log_channel:
         log_embed = discord.Embed(
             title="📋 Role Assigned - Head Manager",
-            color=discord.Color.blue()
+            color=discord.Color(0x00FFFF)
         )
         log_embed.add_field(name="User", value=user.mention, inline=False)
         log_embed.add_field(name="Given by", value=interaction.user.mention, inline=False)
@@ -2223,7 +2223,7 @@ async def add_mod(interaction: discord.Interaction, user: discord.Member):
     if role_log_channel:
         log_embed = discord.Embed(
             title="📋 Role Assigned - Moderator",
-            color=discord.Color.blue()
+            color=discord.Color(0x00FFFF)
         )
         log_embed.add_field(name="User", value=user.mention, inline=False)
         log_embed.add_field(name="Given by", value=interaction.user.mention, inline=False)
@@ -2273,7 +2273,7 @@ async def add_hmod(interaction: discord.Interaction, user: discord.Member):
     if role_log_channel:
         log_embed = discord.Embed(
             title="📋 Role Assigned - Head Moderator",
-            color=discord.Color.blue()
+            color=discord.Color(0x00FFFF)
         )
         log_embed.add_field(name="User", value=user.mention, inline=False)
         log_embed.add_field(name="Given by", value=interaction.user.mention, inline=False)
@@ -2289,7 +2289,7 @@ async def fee(interaction: discord.Interaction):
     embed = discord.Embed(
         title="PLEASE NOTE THERE IS A FEE FOR HANDLING THE TRADE",
         description="",
-        color=discord.Color.blue()
+        color=discord.Color(0x00FFFF)
     )
     
     embed.add_field(
@@ -2305,7 +2305,7 @@ async def fee(interaction: discord.Interaction):
 async def user_info(interaction: discord.Interaction, user: discord.Member):
     embed = discord.Embed(
         title=f"User Information - {user.name}",
-        color=discord.Color.blue()
+        color=discord.Color(0x00FFFF)
     )
     
     embed.set_thumbnail(url=user.display_avatar.url)
@@ -2361,7 +2361,7 @@ async def commands_list(interaction: discord.Interaction):
     embed = discord.Embed(
         title="🏛️ Trade Hub Bot Commands",
         description="All available commands for Trade Hub",
-        color=discord.Color.purple()
+        color=discord.Color(0x00FFFF)
     )
     embed.set_thumbnail(url=LOGO_URL)
     
@@ -2447,7 +2447,7 @@ async def set_afk(interaction: discord.Interaction, status: str = None):
         embed = discord.Embed(
             title="✅ AFK Status Set",
             description=f"I set you AFK to: {status if status else 'AFK'}",
-            color=discord.Color.blue()
+            color=discord.Color(0x00FFFF)
         )
         embed.set_footer(text=FOOTER_TEXT, icon_url=LOGO_URL)
         msg = await interaction.followup.send(embed=embed)
@@ -2617,7 +2617,7 @@ async def on_message(message):
             embed = discord.Embed(
                 title="⏱️ User is AFK",
                 description=f"{mentioned_user.mention} is AFK: {status_msg}",
-                color=discord.Color.gold()
+                color=discord.Color(0x00FFFF)
             )
             embed.set_footer(text=FOOTER_TEXT, icon_url=LOGO_URL)
             await message.reply(embed=embed, mention_author=False)
@@ -2783,7 +2783,7 @@ class ConfirmTradeView(discord.ui.View):
         result_embed = discord.Embed(
             title="🤝 Trade Confirmation Result",
             description=f"{result}\n\n{self.trader1_mention}: {trader1_status}\n{self.trader2_mention}: {trader2_status}",
-            color=discord.Color.gold()
+            color=discord.Color(0x00FFFF)
         )
         
         try:
@@ -2802,7 +2802,7 @@ class ConfirmTradeView(discord.ui.View):
                     thank_you_embed = discord.Embed(
                         title="💜 Thanks for using Trade Hub!",
                         description="Your trade has been completed successfully.",
-                        color=discord.Color.purple()
+                        color=discord.Color(0x00FFFF)
                     )
                     thank_you_embed.set_footer(text=""+FOOTER_TEXT+"", icon_url=LOGO_URL)
                     
@@ -2857,7 +2857,7 @@ async def giveaway_command(interaction: discord.Interaction, prize: str, duratio
     embed = discord.Embed(
         title=prize,
         description="Click the button below to enter!",
-        color=discord.Color.gold()
+        color=discord.Color(0x00FFFF)
     )
     embed.add_field(name="Winners", value=str(winners), inline=True)
     embed.add_field(name="Hosted by", value=f"<@{interaction.user.id}>", inline=True)
@@ -2904,7 +2904,7 @@ async def giveaway_command(interaction: discord.Interaction, prize: str, duratio
                 result_embed = discord.Embed(
                     title=f"🎉 Giveaway Ended - {prize}",
                     description=f"**Winners:** {winner_mentions}",
-                    color=discord.Color.gold()
+                    color=discord.Color(0x00FFFF)
                 )
                 result_embed.set_footer(text=FOOTER_TEXT, icon_url=LOGO_URL)
                 
@@ -3180,7 +3180,7 @@ async def delwarn(interaction: discord.Interaction, user: discord.Member, warnin
     if mod_log_channel:
         embed = discord.Embed(
             title="⚠️ Warning Deleted",
-            color=discord.Color.blue()
+            color=discord.Color(0x00FFFF)
         )
         embed.add_field(name="User", value=user.mention, inline=False)
         embed.add_field(name="Deleted Warning Reason", value=deleted_warn["reason"], inline=False)
@@ -3416,7 +3416,7 @@ class GameSelectView(discord.ui.View):
     @discord.ui.button(label="✂️ Rock Paper Scissors", style=discord.ButtonStyle.blurple, custom_id="game_rps")
     async def rock_paper_scissors(self, interaction: discord.Interaction, button: discord.ui.Button):
         view = RPSView()
-        embed = discord.Embed(title="✂️ Rock Paper Scissors", description=f"{interaction.user.mention} - Choose your move!", color=discord.Color.blurple())
+        embed = discord.Embed(title="✂️ Rock Paper Scissors", description=f"{interaction.user.mention} - Choose your move!", color=discord.Color(0x00FFFF))
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
     
     @discord.ui.button(label="🎯 8-Ball", style=discord.ButtonStyle.blurple, custom_id="game_8ball")
@@ -3451,7 +3451,7 @@ class TradeModal(discord.ui.Modal, title="Trade Details"):
                         f"{self.trader_a_label}: {self.trader_a.mention}\n"
                         f"{self.trader_b_label}: {self.trader_b.mention}\n\n"
                         f"Please accept or decline the trade below.",
-            color=discord.Color.gold()
+            color=discord.Color(0x00FFFF)
         )
         embed.set_footer(text=FOOTER_TEXT, icon_url=LOGO_URL)
         
@@ -3636,7 +3636,7 @@ async def trade(interaction: discord.Interaction):
                     f"**{label_a}:** {trader_a.mention}\n"
                     f"**{label_b}:** {trader_b.mention}\n\n"
                     f"{trader_a.mention}, please click the button below to enter trade details.",
-        color=discord.Color.blue()
+        color=discord.Color(0x00FFFF)
     )
     embed.set_footer(text=FOOTER_TEXT, icon_url=LOGO_URL)
     
@@ -3661,7 +3661,7 @@ async def legit_check(interaction: discord.Interaction):
         embed = discord.Embed(
             title="❓ Are we legit?",
             description="",
-            color=discord.Color.blue()
+            color=discord.Color(0x00FFFF)
         )
         
         embed.add_field(
@@ -3815,7 +3815,7 @@ async def vouches(interaction: discord.Interaction, user: discord.Member):
     embed = discord.Embed(
         title="🌟 Vouch Count",
         description=f"Here is the vouch status for {user.mention}",
-        color=discord.Color.gold()
+        color=discord.Color(0x00FFFF)
     )
     embed.add_field(name="👤 User", value=user.mention, inline=True)
     embed.add_field(name="✅ Vouches", value=f"**{vouch_count}**", inline=True)
