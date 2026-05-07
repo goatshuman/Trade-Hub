@@ -3644,8 +3644,8 @@ async def trade(interaction: discord.Interaction):
     await interaction.response.send_message(f"{trader_a.mention}", embed=embed, view=view)
 
 LEGIT_CHECK_CHANNEL = 1466751202757710000
-PROOF_CHANNEL = 1466751202757710001
-THANK_YOU_CHANNEL = 1466751202757710001
+PROOF_CHANNEL = 1466751202757710002
+THANK_YOU_CHANNEL = 1466751202757710002
 
 @bot.tree.command(name="legit_check", description="Post a legit check message with auto-reactions", guild=discord.Object(id=GUILD_ID))
 @app_commands.check(is_owner_only)
@@ -3697,10 +3697,10 @@ async def legit_check(interaction: discord.Interaction):
 async def on_reaction_add(reaction, user):
     if user.bot:
         return
-    
+
     if reaction.message.channel.id != LEGIT_CHECK_CHANNEL:
         return
-    
+
     if str(reaction.emoji) == "❌":
         proof_channel = bot.get_channel(PROOF_CHANNEL)
         try:
@@ -3711,16 +3711,18 @@ async def on_reaction_add(reaction, user):
             )
             embed.set_footer(text=FOOTER_TEXT, icon_url=LOGO_URL)
             await user.send(embed=embed)
-        except:
-            pass
-        
+        except Exception as e:
+            print(f"Failed to DM {user} (❌ reaction): {e}")
+
         await asyncio.sleep(15)
-        
+
         try:
-            await reaction.remove(user)
-        except:
-            pass
-    
+            channel = bot.get_channel(LEGIT_CHECK_CHANNEL)
+            fresh_msg = await channel.fetch_message(reaction.message.id)
+            await fresh_msg.remove_reaction("❌", user)
+        except Exception as e:
+            print(f"Failed to remove ❌ reaction from {user}: {e}")
+
     elif str(reaction.emoji) == "✅":
         thank_you_channel = bot.get_channel(THANK_YOU_CHANNEL)
         try:
@@ -3731,10 +3733,10 @@ async def on_reaction_add(reaction, user):
             )
             embed.set_footer(text=FOOTER_TEXT, icon_url=LOGO_URL)
             await user.send(embed=embed)
-        except:
-            pass
+        except Exception as e:
+            print(f"Failed to DM {user} (✅ reaction): {e}")
 
-CUSTOM_VERIFIED_ROLE_ID = 1453596345377226762
+CUSTOM_VERIFIED_ROLE_ID = 1466751199247339596
 
 @bot.tree.command(name="give_verified", description="Give verified role to a user", guild=discord.Object(id=GUILD_ID))
 @app_commands.describe(user="The user to give verified role to")
