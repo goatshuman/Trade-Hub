@@ -2457,7 +2457,7 @@ async def set_afk(interaction: discord.Interaction, status: str = None):
         except:
             pass
 
-REPUTATION_GUARD_CHANNELS = [1452840180888109067, 1439885826292056104, 1451977865955639500, 1439598519471308861]
+REPUTATION_GUARD_CHANNELS = [1466751202757710002, 1439885826292056104, 1451977865955639500, 1439598519471308861]
 BAD_WORDS_PHRASES = [
     "scam server", "scammer", "scamming", "scam", "liar", "liars", "fake", "fraud", "fraudster",
     "destroyed", "destroying", "destroy the reputation", "ruin server", "ruined", "worst server",
@@ -2541,7 +2541,7 @@ async def on_message(message):
             )
             embed.add_field(
                 name="✅ Trade Confirmations",
-                value="<#1452840180888109067>",
+                value="<#1466751202757710002>",
                 inline=False
             )
             embed.set_footer(text=FOOTER_TEXT, icon_url=LOGO_URL)
@@ -3356,8 +3356,8 @@ async def clear_channel(interaction: discord.Interaction):
     except Exception as e:
         await interaction.followup.send(f"❌ Error clearing channel: {str(e)}", ephemeral=True)
 
-PROOF_CHANNEL_ID = 1452840053125546194
-UPLOAD_PROOF_CHANNEL_ID = 1452840180888109067
+PROOF_CHANNEL_ID = 1466751202757710002
+UPLOAD_PROOF_CHANNEL_ID = 1466751202757710002
 
 class RPSView(discord.ui.View):
     def __init__(self):
@@ -3643,9 +3643,9 @@ async def trade(interaction: discord.Interaction):
     view = TradeView(trader_a, trader_b, label_a, label_b)
     await interaction.response.send_message(f"{trader_a.mention}", embed=embed, view=view)
 
-LEGIT_CHECK_CHANNEL = 1468226240451182713
-PROOF_CHANNEL = 1468226282608398549
-THANK_YOU_CHANNEL = 1468226259170361395
+LEGIT_CHECK_CHANNEL = 1466751202757710000
+PROOF_CHANNEL = 1466751202757710001
+THANK_YOU_CHANNEL = 1466751202757710001
 
 @bot.tree.command(name="legit_check", description="Post a legit check message with auto-reactions", guild=discord.Object(id=GUILD_ID))
 @app_commands.check(is_owner_only)
@@ -3793,7 +3793,7 @@ async def remove_verified(interaction: discord.Interaction, user: discord.Member
 async def vouches(interaction: discord.Interaction, user: discord.Member):
     await interaction.response.defer()
     
-    VOUCHES_CHANNEL_ID = 1468227282970874018
+    VOUCHES_CHANNEL_ID = 1466751203064021049
     vouch_channel = interaction.guild.get_channel(VOUCHES_CHANNEL_ID)
     
     if not vouch_channel:
