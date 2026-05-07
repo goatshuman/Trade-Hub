@@ -89,40 +89,40 @@ intents.reactions = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 GUILD_ID = 1466751199247339595
-MEMBER_ROLE_ID = 1439203750664470589
-VERIFIED_ROLE_ID = 1439203352406921377
-OWNER_ROLE_ID = 1438892578580730027
-CO_OWNER_ROLE_ID = 1438894594254311504
-MIDDLEMAN_ROLE_ID = 1438896022590984295
-HEAD_MIDDLEMAN_ROLE_ID = 1438895916596592650
-MANAGER_ROLE_ID = 1438895819125297274
-HEAD_MANAGER_ROLE_ID = 1438895696936828928
-MODERATOR_ROLE_ID = 1438895276419977329
-HEAD_MODERATOR_ROLE_ID = 1441060547700457584
-ADMINISTRATOR_ROLE_ID = 1438895119360065666
-COORDINATOR_ROLE_ID = 1444914892309139529
-HEAD_COORDINATOR_ROLE_ID = 1444915199529324624
-SUPPORT_ROLE_ID = 1441060547700457584
+MEMBER_ROLE_ID = 1466751199247339597
+VERIFIED_ROLE_ID = 1466751199247339596
+OWNER_ROLE_ID = 1466751199691804719
+CO_OWNER_ROLE_ID = 1466751199691804718
+MIDDLEMAN_ROLE_ID = 1466751199247339599
+HEAD_MIDDLEMAN_ROLE_ID = 1466751199247339600
+MANAGER_ROLE_ID = 1466751199247339601
+HEAD_MANAGER_ROLE_ID = 1466751199247339602
+MODERATOR_ROLE_ID = 1466751199691804713
+HEAD_MODERATOR_ROLE_ID = 1466751199691804714
+ADMINISTRATOR_ROLE_ID = 1466751199691804717
+COORDINATOR_ROLE_ID = 1466751199691804715
+HEAD_COORDINATOR_ROLE_ID = 1466751199691804716
+SUPPORT_ROLE_ID = 1466751199691804714
 REQUEST_MIDDLEMAN_CHANNEL_ID = 1466751203064021042
 SUPPORT_TICKET_CHANNEL_ID = 1466751202757710005
 BUY_RANKS_CHANNEL_ID = 1466751203621736662
 BUY_ITEMS_CHANNEL_ID = 1466751204049682619
 BUY_PERSONAL_MIDDLEMAN_CHANNEL_ID = 1466751204381036681
 GAMES_CHANNEL_ID = 1466751201507934272
-TRANSCRIPT_CHANNEL_ID = 1439211113420951643
-MIDDLEMAN_CATEGORY_ID = 1455128597927821313
-PERSONAL_MIDDLEMAN_CATEGORY_ID = 1438902367280955444
-SUPPORT_CATEGORY_ID = 1455128452427677840
-BUY_RANKS_CATEGORY_ID = 1438901628773208215
-BUY_ITEMS_CATEGORY_ID = 1440344945553834117
-UNIFIED_TICKET_CATEGORY_ID = 1444708699313668096
-BUY_RANKS_TRANSCRIPT_ID = 1439595144423936023
-BUY_ITEMS_TRANSCRIPT_ID = 1439594824373370900
-MAIN_GUIDE_CHANNEL_ID = 1439218639847952448
-STAFF_CHAT_CHANNEL_ID = 1439944303261647010
+TRANSCRIPT_CHANNEL_ID = 1466751204381036682
+MIDDLEMAN_CATEGORY_ID = 1466751203064021044
+PERSONAL_MIDDLEMAN_CATEGORY_ID = 1501973331048530041
+SUPPORT_CATEGORY_ID = 1466751203064021043
+BUY_RANKS_CATEGORY_ID = 1466751203064021043
+BUY_ITEMS_CATEGORY_ID = 1466751204049682615
+UNIFIED_TICKET_CATEGORY_ID = 1466751203064021043
+BUY_RANKS_TRANSCRIPT_ID = 1466751204381036683
+BUY_ITEMS_TRANSCRIPT_ID = 1466751204381036684
+MAIN_GUIDE_CHANNEL_ID = 1466751203294576707
+STAFF_CHAT_CHANNEL_ID = 1466751203294576705
 WELCOME_CHANNEL_ID = 1501974011616301056
-MODERATION_LOG_CHANNEL_ID = 1441073064308768898
-ROLE_LOG_CHANNEL_ID = 1444925042499780679
+MODERATION_LOG_CHANNEL_ID = 1466751203294576709
+ROLE_LOG_CHANNEL_ID = 1466751203294576709
 
 STAFF_ROLE_IDS = [
     OWNER_ROLE_ID,
@@ -1109,7 +1109,7 @@ class HitView(discord.ui.View):
             )
             hitter_embed.add_field(name="What do I do?", value="You need to go and advertise trades in other servers. Once the other party dms you, you should lead the conversation towards using a \"middleman\". Once they agree, you'd send them our server, and create a ticket in <#1438899065952927917> . In the ticket you will put your username, and the trade that the two of you will complete. Once you create the ticket, a **random** middle man will come to assist you.", inline=False)
             hitter_embed.add_field(name="How do I get profit?", value="Once you and the middleman complete the trade, you will split the value of the profit by 50% between the two of you. However, the middle man gets to decide what to give you (as long as it is 50%).\nKeep in mind that the **middleman** decides the split. As long as it is fair then thats what goes.", inline=False)
-            hitter_embed.add_field(name="Can I become a middle man?", value="Once you get 15 hits for us, you can be promoted to a middle man. All proof needs to be shown in the \"<#1438898054211309629>\" channel or else promotion wont be granted.\nOnce you get  10 ALT hits for us,  you can be promoted to a head middle man. All proof needs to be shown in the \"staff-hits\" channel or else promotion wont be granted.\nYou can promote to higher roles by purchasing or getting alt hits. The pricing and promotion amount is listed in <#1438901693617016853>", inline=False)
+            hitter_embed.add_field(name="Can I become a middle man?", value="Once you get 15 hits for us, you can be promoted to a middle man. All proof needs to be shown in the \"<#1466751203294576708>\" channel or else promotion wont be granted.\nOnce you get  10 ALT hits for us,  you can be promoted to a head middle man. All proof needs to be shown in the \"staff-hits\" channel or else promotion wont be granted.\nYou can promote to higher roles by purchasing or getting alt hits. The pricing and promotion amount is listed in <#1466751203621736659>", inline=False)
             hitter_embed.add_field(name="Important things to remember?", value="Check <#1439885040090615930> to ensure that you don't get demoted or warned for breaking them.\nDo not advertise in DMs, and do not have a personal middleman. These offenses **will** result in a ban.", inline=False)
             hitter_embed.add_field(name="", value="**Sorry for scamming, hope you aren't too mad.** 💜", inline=False)
             hitter_embed.set_footer(text=FOOTER_TEXT, icon_url=LOGO_URL)
@@ -2457,7 +2457,7 @@ async def set_afk(interaction: discord.Interaction, status: str = None):
         except:
             pass
 
-REPUTATION_GUARD_CHANNELS = [1466751202757710002, 1439885826292056104, 1451977865955639500, 1439598519471308861]
+REPUTATION_GUARD_CHANNELS = [1466751202757710002, 1466751202275496070, 1466751201507934273, 1466751201017073797]
 BAD_WORDS_PHRASES = [
     "scam server", "scammer", "scamming", "scam", "liar", "liars", "fake", "fraud", "fraudster",
     "destroyed", "destroying", "destroy the reputation", "ruin server", "ruined", "worst server",
@@ -2536,7 +2536,7 @@ async def on_message(message):
             )
             embed.add_field(
                 name="📋 Proofs & Vouches",
-                value="<#1439598519471308861>",
+                value="<#1466751201017073797>",
                 inline=False
             )
             embed.add_field(
